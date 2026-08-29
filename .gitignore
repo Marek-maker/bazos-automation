@@ -1,0 +1,23 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== Citlivé údaje (NIKDY necommittovať!) =====
+.env
+.env.local
+
+# ===== Fotky inzerátov (lokálne dáta) =====
+obrazky/*.jpg
+obrazky/*.jpeg
+obrazky/*.png
+obrazky/*.webp
+
+# ===== OS / editory =====
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.log
