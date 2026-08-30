@@ -256,6 +256,12 @@ def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
             if driver.find_elements(By.NAME, "nadpis"):
                 logging.info(f"Objavil sa formulár inzerátu – overenie netreba ({int(time.time() - zaciatok)} s).")
                 return None
+            # Známy názov poľa pre kód (zistený reálnym behom 30.8.2026) – preferujeme ho
+            for meno_zname in ("klic",):
+                prvky = driver.find_elements(By.NAME, meno_zname)
+                if prvky and prvky[0].is_displayed():
+                    logging.info(f"Pole pre SMS kód nájdené po {int(time.time() - zaciatok)} s (name='{meno_zname}').")
+                    return prvky[0]
             inputs = driver.find_elements(By.TAG_NAME, "input")
             logging.debug(f"Čakám na SMS kód ({int(time.time() - zaciatok)} s): "
                           + ", ".join(f"{i.get_attribute('name') or '?'}:{i.get_attribute('type') or '?'}"

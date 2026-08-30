@@ -206,3 +206,18 @@ def test_detekcia_ignoruje_search_text_polia():
     """humkreis/cenaod/cenado sú type=text, ale NESMIA byť pole pre kód."""
     r = b.najdi_pole_kodu(FakeDriver(StateSearchTextFields()), casovy_limit=2)
     assert r is None
+
+
+class KlicFakeDriver:
+    """Stránka s už známym poľom pre kód (name='klic' – zistené 30.8.2026)."""
+
+    def find_elements(self, by, val):
+        if by == "name" and val == "klic":
+            return [FakeInput("klic")]
+        return []
+
+
+def test_detekcia_preferuje_zname_pole_klic():
+    r = b.najdi_pole_kodu(KlicFakeDriver(), casovy_limit=2)
+    assert r is not None
+    assert r.get_attribute("name") == "klic"
