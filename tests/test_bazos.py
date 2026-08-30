@@ -39,7 +39,7 @@ def test_funkcie_existuju():
                  "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
                  "najdi_fotku", "vypis_elementy_formulara", "pockaj_na_upload_fotky",
-                 "vypln_inzerat", "pridaj_inzerat_bazos"):
+                 "vypln_inzerat", "odosli_inzerat", "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
 
@@ -82,6 +82,23 @@ def test_najdi_fotku_vrati_obrazok():
     fotka = b.najdi_fotku()
     assert isinstance(fotka, str) and fotka
     assert os.path.exists(fotka) or fotka == b.CESTA_K_FOTKE
+
+
+def test_kontaktne_policka_realne_nazvy():
+    """Kontaktné polia podľa reálneho HTML (30.8.2026): telefoni, heslobazar,
+    maili (voliteľný) – nie telefon/heslo z pôvodného reportu."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert '"telefoni"' in src and '"heslobazar"' in src and '"maili"' in src
+    assert "BAZOS_MAIL" in src
+
+
+def test_odoslanie_scoping_do_formulara():
+    """Odoslanie inzerátu musí byť scoping do formulára s nadpisom –
+    name='Submit' majú vyhľadávací aj overovací formulár."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "def odosli_inzerat" in src
+    assert 'find_element(By.NAME, "nadpis")' in src
+    assert "./ancestor::form" in src
 
 
 # ---------- flagy príkazového riadka ----------

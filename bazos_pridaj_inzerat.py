@@ -11,20 +11,18 @@ Migrácia z pyautogui (pevné súradnice pixelov, Linux-only) na Selenium:
 
 Verzia 2: podpora overenia telefónu (SMS kľúč) – Bazoš ho vyžaduje PRED
 zobrazením formulára inzerátu; SMS kód zadáva používateľ interaktívne.
-
 Verzia 3: Edge-only + navigácia cez menu + logovanie nezobrazenej formy.
 Verzia 4: flag --debug (predĺžené limity + DEBUG log), --sms-timeout.
 Verzia 5: vylúčené vyhľadávacie polia z detekcie kódu, detekcia
          presmerovania na kategóriu, EOF-safe vstup.
 Verzia 6: submit overenia scoping do formovereni, preferovaný názov poľa
-         pre kód (klic), formulár inzerátu podľa reálneho HTML
-         (category, lokalita s autocomplete, Dropzone fotky).
-Verzia 7:
-    - persistentný Edge profil (edge_profile/) – overenie telefónu
-      (cookies) sa uchová medzi behmi, nevyčerpáva sa limit na SMS
-    - čakanie na dokončenie uploadu fotky (Dropzone dz-success),
-      inak by sa inzerát odoslal bez fotky
-    - fotka sa vyberie automaticky z obrazky/ (prvá jpg/jpeg/png/webp)
+         pre kód (klic), formulár inzerátu podľa reálneho HTML.
+Verzia 7: persistentný Edge profil (edge_profile/), čakanie na dokončenie
+         uploadu fotky (dz-success), auto-výber fotky z obrazky/.
+Verzia 8:
+    - kontaktné polia podľa reálneho HTML (30.8.2026): jmeno, telefoni,
+      heslobazar, maili (voliteľný, BAZOS_MAIL z .env)
+    - odoslanie inzerátu scoping do formulára inzerátu (odosli_inzerat)
 
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
@@ -61,6 +59,7 @@ MENO = os.getenv("BAZOS_MENO")
 TELEFON = os.getenv("BAZOS_TELEFON")
 HESLO = os.getenv("BAZOS_HESLO")
 PSC = os.getenv("BAZOS_PSC")
+MAIL = os.getenv("BAZOS_MAIL")  # voliteľné – e-mail v inzeráte
 
 if not all([MENO, TELEFON, HESLO, PSC]):
     logging.warning("Niektoré hodnoty v .env chýbajú (BAZOS_MENO / BAZOS_TELEFON / BAZOS_HESLO / BAZOS_PSC)!")
@@ -132,6 +131,14 @@ DEBUG_MODE = False                 # zapína flag --debug
 #    input    name="lokalita"  – PSČ/obec s autocomplete (naseptavacpscinsert)
 #    fotky: Dropzone (button#uploadbutton, div#dropzonea) – JS upload,
 #           po pridaní súboru sa čaká na .dz-success
+#
+# C) KONTAKTNÉ ÚDAJE (spodná časť formulára inzerátu, 30.8.2026):
+#    input  name="jmeno"      – meno predávajúceho
+#    input  name="telefoni"   – telefón (pozor: nie "telefon"!)
+#    input  name="maili"      – e-mail (voliteľný, BAZOS_MAIL)
+#    input  name="heslobazar" – heslo k inzerátu (pozor: nie "heslo"!)
+#    odoslanie: input name="Submit" value="Odoslať" – scoping do formulára
+#    inzerátu (odosli_inzerat), lebo name="Submit" majú aj iné formuláre
 
 # Polia, ktoré NIE sú poľom pre SMS kód. Vyhľadávací formulár (formt) je na
 # KAŽDEJ stránke Bazoša – bez vylúčenia by sa humkreis ("Okolie v km") bral
@@ -469,11 +476,13 @@ def vypln_inzerat(driver, wait):
     except NoSuchElementException:
         logging.warning("Select 'category' sa nenašiel – kategória sa nenastavuje.")
 
-    # 2) Jednoduché textové polia (jmeno/telefon/heslo možno v novom
-    #    formulári neexistujú – preberajú sa z overenia; preskočia sa)
+    # 2) Textové polia (kontaktné názvy podľa reálneho HTML: telefoni,
+    #    heslobazar; maili je voliteľný – len ak je BAZOS_MAIL v .env)
     logging.info("Vyplňujem textové polia inzerátu...")
-    polia = (("nadpis", INZERAT_NADPIS), ("popis", INZERAT_POPIS), ("cena", INZERAT_CENA),
-             ("jmeno", MENO), ("telefon", TELEFON), ("heslo", HESLO))
+    polia = [("nadpis", INZERAT_NADPIS), ("popis", INZERAT_POPIS), ("cena", INZERAT_CENA),
+             ("jmeno", MENO), ("telefoni", TELEFON), ("heslobazar", HESLO)]
+    if MAIL:
+        polia.append(("maili", MAIL))
     chybajuce = []
     for meno, hodnota in polia:
         try:
@@ -526,6 +535,18 @@ def vypln_inzerat(driver, wait):
     logging.info("DOKONČENÉ: Formulár bol úspešne vyplnený.")
 
 
+def odosli_inzerat(driver):
+    """Klikne 'Odoslať' v rámci formulára inzerátu.
+
+    name="Submit" majú vyhľadávací, overovací aj inzertný formulár –
+    bez scoping by sa odoslal nesprávny. Kotva: element 'nadpis'.
+    """
+    form = driver.find_element(By.NAME, "nadpis").find_element(By.XPATH, "./ancestor::form")
+    tlacidlo = form.find_element(By.XPATH, ".//input[@type='submit'] | .//button[@type='submit']")
+    tlacidlo.click()
+    logging.info("Inzerát odoslaný.")
+
+
 # ==========================================
 # 7. HLAVNÝ EXEKUČNÝ BLOK
 # ==========================================
@@ -558,9 +579,7 @@ def pridaj_inzerat_bazos(sms_limit=None):
             if vstup("\n[DEBUG] Stlač ENTER pre ukončenie testu...\n") is None:
                 logging.info("Neinteraktívny režim – končím test.")
         else:
-            # Pre produkčné nasadenie odomknúť:
-            # driver.find_element(By.NAME, "odeslat").click()
-            pass
+            odosli_inzerat(driver)
 
     except TimeoutException:
         logging.error("SKRIPT ZAMRZOL: Vypršal limit pre načítanie stránky alebo elementu.")
