@@ -4,7 +4,9 @@ Spustenie (koreň projektu):
     .venv\Scripts\python -m pytest
 """
 import os
+import subprocess
 import py_compile
+import pytest
 
 import bazos_pridaj_inzerat as b
 import modul_sablona
@@ -23,7 +25,6 @@ def test_syntax():
 def test_konstanty():
     assert b.SMS_CEKANIE_SEKUND > 0
     assert b.DEBUG_CEKANIE is True
-    assert b.TELEFON
 
 
 def test_url_constanty():
@@ -37,12 +38,18 @@ def test_edge_only_bez_chrome():
     assert "EdgeChromiumDriverManager" in src
 
 
+def test_ziadny_env_v_kode():
+    """Skript nesmie používať .env – všetko ide zo šablóny (###ID)."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "dotenv" not in src and "os.getenv" not in src
+
+
 def test_funkcie_existuju():
     for name in ("parse_args", "aktivuj_debug", "log_viditelny_text", "vstup",
                  "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
-                 "vyber_kategoriu", "vypis_elementy_formulara",
-                 "vypln_inzerat", "odosli_inzerat", "pridaj_inzerat_bazos"):
+                 "vyber_kategoriu", "vypis_elementy_formulara", "vypln_inzerat",
+                 "odosli_inzerat", "skontroluj_sablona", "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
 
@@ -70,7 +77,6 @@ def test_hlavny_skript_pouziva_moduly():
     src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "from modul_sablona import" in src
     assert "from modul_upload import" in src
-    assert "sablona_inzeratu.txt" in src
 
 
 def test_odoslanie_scoping_do_formulara():
@@ -80,6 +86,70 @@ def test_odoslanie_scoping_do_formulara():
     assert "def odosli_inzerat" in src
     assert 'find_element(By.NAME, "nadpis")' in src
     assert "./ancestor::form" in src
+
+
+# ---------- ochrana citlivých údajov ----------
+
+def test_realna_sablona_nie_je_v_gite():
+    """sablona_inzeratu.txt (reálne údaje) NESMIE byť trackovaná gitom."""
+    sledovane = subprocess.run(
+        ["git", "-C", PROJ, "ls-files"], capture_output=True, text=True).stdout.splitlines()
+    assert "sablona_inzeratu.txt" not in sledovane
+    assert "sablona_inzeratu.example.txt" in sledovane  # example áno
+
+
+def test_gitignore_chrani_sablona():
+    gitignore = open(os.path.join(PROJ, ".gitignore"), encoding="utf-8").read()
+    assert "sablona_inzeratu.txt" in gitignore
+
+
+def _realna_sablona():
+    """Načíta reálnu (gitignored) šablónu – None, ak neexistuje."""
+    cesta = os.path.join(PROJ, "sablona_inzeratu.txt")
+    if not os.path.exists(cesta):
+        return None
+    return modul_sablona.nacitaj_sablona(cesta)
+
+
+def test_example_nema_realne_udaje():
+    """Example šablóna má len dummy dáta – reálne hodnoty (telefón, PSČ,
+    heslo) z pracovnej šablóny sa v example nesmú vyskytnúť."""
+    realna = _realna_sablona()
+    obsah = open(os.path.join(PROJ, "sablona_inzeratu.example.txt"), encoding="utf-8").read()
+    assert "0900000000" in obsah  # dummy telefón
+    if realna:
+        for id_ in ("###05", "###07", "###08"):
+            if realna.get(id_):
+                assert realna[id_] not in obsah, f"reálna hodnota {id_} unikla do example!"
+
+
+def test_history_nema_telefon():
+    """História gitu nesmie obsahovať reálny telefón zo šablóny.
+    (PSČ 00000 ostalo v starom commite 8b30114 na základe rozhodnutia
+    používateľa – história sa neprepisuje.)"""
+    realna = _realna_sablona()
+    telefon = realna.get("###07") if realna else None
+    if not telefon:
+        pytest.skip("reálna šablóna nie je k dispozícii")
+    vysledok = subprocess.run(
+        ["git", "-C", PROJ, "log", "--all", "--oneline", "-S", telefon],
+        capture_output=True, text=True)
+    assert vysledok.stdout.strip() == "", "telefón je v histórii!"
+
+
+def test_trackovane_subory_nemaju_telefon():
+    """Žiadny gitom sledovaný súbor nesmie obsahovať reálny telefón."""
+    realna = _realna_sablona()
+    telefon = realna.get("###07") if realna else None
+    if not telefon:
+        pytest.skip("reálna šablóna nie je k dispozícii")
+    sledovane = subprocess.run(
+        ["git", "-C", PROJ, "ls-files"], capture_output=True, text=True).stdout.splitlines()
+    for rel in sledovane:
+        cesta = os.path.join(PROJ, rel)
+        if os.path.isfile(cesta):
+            obsah = open(cesta, encoding="utf-8", errors="ignore").read()
+            assert telefon not in obsah, f"telefón je v trackovanom súbore: {rel}"
 
 
 # ---------- modul_sablona ----------
@@ -95,12 +165,13 @@ def test_mapping_id_na_pole():
 
 
 def test_nacitaj_sablona_zo_suboru():
-    """Reálna šablóna v repo sa načíta správne (###01..###05)."""
-    s = modul_sablona.nacitaj_sablona(os.path.join(PROJ, "sablona_inzeratu.txt"))
+    """Example šablóna sa načíta správne (###01..###09)."""
+    s = modul_sablona.nacitaj_sablona(os.path.join(PROJ, "sablona_inzeratu.example.txt"))
     assert s.get("###01") == "PC, Počítače"
-    assert s.get("###02") == "Repasovaný Dell PowerEdge Server - Záruka"
+    assert s.get("###02") == "Príklad nadpisu inzerátu"
     assert s.get("###05") == "00000"
-    assert len(s) >= 5
+    assert s.get("###07") == "0900000000"
+    assert len(s) >= 8
 
 
 def test_nacitaj_sablona_preskoci_zly_riadok(tmp_path):

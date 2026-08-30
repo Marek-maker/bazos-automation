@@ -8,6 +8,8 @@ venv/
 # ===== Citlivé údaje (NIKDY necommittovať!) =====
 .env
 .env.local
+# Reálna šablóna inzerátu (tvoje údaje) – na git ide LEN example s dummy dátami
+sablona_inzeratu.txt
 
 # ===== Fotky inzerátov (lokálne dáta) =====
 obrazky/*.jpg

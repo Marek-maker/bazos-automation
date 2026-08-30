@@ -7,7 +7,6 @@ Migrácia z pyautogui (pevné súradnice pixelov, Linux-only) na Selenium:
     - nezávislé od OS a rozlíšenia obrazovky
     - vyhľadávanie elementov cez HTML DOM (By.NAME, XPath)
     - priame nahrávanie fotiek do upload elementu (bez OS dialógu)
-    - citlivé údaje v .env (gitignored)
 
 Verzia 2: podpora overenia telefónu (SMS kľúč) – Bazoš ho vyžaduje PRED
 zobrazením formulára inzerátu; SMS kód zadáva používateľ interaktívne.
@@ -21,13 +20,14 @@ Verzia 7: persistentný Edge profil (edge_profile/), čakanie na dokončenie
          uploadu fotky (dz-success), auto-výber fotky z obrazky/.
 Verzia 8: kontaktné polia podľa reálneho HTML (telefoni, heslobazar,
          maili), odoslanie inzerátu scoping do formulára.
-Verzia 9:
-    - modulárne: modul_sablona.py (textové polia zo šablóny ###ID),
-      modul_upload.py (fotky jednu za druhou s čakaním na upload)
-    - textové polia inzerátu sa berú zo sablona_inzeratu.txt
-      (###01 kategória, ###02 nadpis, ###03 popis, ###04 cena,
-      ###05 lokalita/PSČ), kontakt z .env; šablóna má prednosť
-    - kategória sa vyberá dynamicky podľa textu možnosti v selecte
+Verzia 9: modulárne – modul_sablona.py (texty zo šablóny ###ID),
+         modul_upload.py (fotky jedna za druhou s čakaním).
+Verzia 10:
+    - VŠETKY údaje inzerátu (kategória, nadpis, popis, cena, PSČ, meno,
+      telefón, heslo, e-mail) sa berú JEN zo sablona_inzeratu.txt
+      (###ID:hodnota) – .env sa už nepoužíva
+    - sablona_inzeratu.txt je GITIGNORED (tvoje reálne údaje); do gitu
+      ide len sablona_inzeratu.example.txt s dummy dátami
 
 Moduly:
     modul_sablona.py – načítanie šablóny ###ID:hodnota + mapovanie
@@ -36,10 +36,10 @@ Moduly:
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
 import os
+import sys
 import time
 import logging
 import argparse
-from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
@@ -65,25 +65,25 @@ logging.basicConfig(
 )
 
 # ==========================================
-# 2. NAČÍTANIE PREMENNÝCH Z .env
+# 2. ŠABLÓNA INZERÁTU (JEDINÝ ZDROJ ÚDAJOV)
 # ==========================================
-load_dotenv()
-MENO = os.getenv("BAZOS_MENO")
-TELEFON = os.getenv("BAZOS_TELEFON")
-HESLO = os.getenv("BAZOS_HESLO")
-PSC = os.getenv("BAZOS_PSC")
-MAIL = os.getenv("BAZOS_MAIL")  # voliteľné – e-mail v inzeráte
-
-if not all([MENO, TELEFON, HESLO, PSC]):
-    logging.warning("Niektoré hodnoty v .env chýbajú (BAZOS_MENO / BAZOS_TELEFON / BAZOS_HESLO / BAZOS_PSC)!")
-
-# Dynamické cesty (nezávislé od OS / aktuálneho adresára)
+# Všetky údaje inzerátu žijú v sablona_inzeratu.txt (###ID:hodnota).
+# Tento súbor je GITIGNORED – do gitu ide len sablona_inzeratu.example.txt
+# s dummy dátami. Mapovanie ID -> pole: modul_sablona.MAPPING.
 AKTUALNA_ZLOZKA = os.path.dirname(os.path.abspath(__file__))
 ZLOZKA_OBRAZKOV = os.path.join(AKTUALNA_ZLOZKA, "obrazky")
 CESTA_K_SABLONE = os.path.join(AKTUALNA_ZLOZKA, "sablona_inzeratu.txt")
-# Persistentný Edge profil: uchová cookies aj overenie telefónu medzi
-# behmi – nevyčerpáva sa limit na SMS pri každom spustení.
 PROFIL_EDGE = os.path.join(AKTUALNA_ZLOZKA, "edge_profile")
+
+SABLONA = nacitaj_sablona(CESTA_K_SABLONE)
+TELEFON = SABLONA.get("###07")  # telefón pre overenie aj kontaktné pole
+
+# Povinné polia šablóny – bez nich skript nemá zmysel spúšťať
+POVINNE_V_SABLONE = ("###01", "###02", "###03", "###04", "###05", "###06", "###07", "###08")
+
+# [DEBUG] True  = formulár sa vyplní a čaká na ENTER (inzerát sa NEODOŠLE).
+#         False = odošle formulár (production režim).
+DEBUG_CEKANIE = True
 
 # ==========================================
 # 2a. URL (zistené 29.8.2026 – curl + reálny prehliadač)
@@ -96,22 +96,7 @@ URL_KATEGORIA_PC = "https://pc.bazos.sk/"
 URL_PRIDAT_INZERAT = "https://pc.bazos.sk/pridat-inzerat.php"
 
 # ==========================================
-# 2b. ŠABLÓNA INZERÁTU (textové polia)
-# ==========================================
-# Textové polia inzerátu sa berú zo sablona_inzeratu.txt (###ID:hodnota).
-# Šablóna má prednosť; ak pole v šablóne chýba, použije sa .env alebo
-# predvolená hodnota nižšie.
-SABLONA = nacitaj_sablona(CESTA_K_SABLONE)
-INZERAT_NADPIS = "Repasovaný Dell PowerEdge Server - Záruka"  # fallback pre ###02
-INZERAT_POPIS = "Plne funkčný, vyčistený a pretestovaný enterprise server vhodný do racku."  # fallback ###03
-INZERAT_CENA = "250"  # fallback pre ###04
-
-# [DEBUG] True  = formulár sa vyplní a čaká na ENTER (inzerát sa NEODOŠLE).
-#         False = odošle formulár (production režim).
-DEBUG_CEKANIE = True
-
-# ==========================================
-# 2c. ČASOVÉ LIMITY (sekundy)
+# 2b. ČASOVÉ LIMITY (sekundy)
 # ==========================================
 SMS_CEKANIE_SEKUND = 120           # čakanie na pole pre SMS kód (štandard)
 DEBUG_SMS_CEKANIE_SEKUND = 300     # čakanie na pole pre SMS kód s --debug
@@ -124,7 +109,7 @@ DEBUG_LIMIT_UPLOAD_SEKUND = 120    # s --debug
 DEBUG_MODE = False                 # zapína flag --debug
 
 # ==========================================
-# 2d. REÁLNE ELEMENTY STRÁNKY (zistené 29.–30.8.2026)
+# 2c. REÁLNE ELEMENTY STRÁNKY (zistené 29.–30.8.2026)
 # ==========================================
 # A) OVERENIE TELEFÓNU – zobrazí sa PRED formulárom inzerátu:
 #    form  name="formovereni"  action="/pridat-inzerat.php"
@@ -150,7 +135,7 @@ DEBUG_MODE = False                 # zapína flag --debug
 # C) KONTAKTNÉ ÚDAJE (spodná časť formulára inzerátu, 30.8.2026):
 #    input  name="jmeno"      – meno predávajúceho
 #    input  name="telefoni"   – telefón (pozor: nie "telefon"!)
-#    input  name="maili"      – e-mail (voliteľný, BAZOS_MAIL)
+#    input  name="maili"      – e-mail (voliteľný, ###09)
 #    input  name="heslobazar" – heslo k inzerátu (pozor: nie "heslo"!)
 #    odoslanie: input name="Submit" value="Odoslať" – scoping do formulára
 #    inzerátu (odosli_inzerat), lebo name="Submit" majú aj iné formuláre
@@ -161,7 +146,7 @@ DEBUG_MODE = False                 # zapína flag --debug
 VYLUCENE_POLIA = ("teloverit", "hledat", "hlokalita", "humkreis", "cenaod", "cenado")
 
 # ==========================================
-# 2e. ARGUMENTY PRÍKAZOVÉHO RIADKA
+# 2d. ARGUMENTY PRÍKAZOVÉHO RIADKA
 # ==========================================
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Bazoš automatizácia inzerátov (Selenium, Edge)")
@@ -363,7 +348,7 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
     # netreba potom čakať na kód, ktorý nikdy nepríde
     if je_kategoria_prehlad(driver):
         logging.error("Bazoš po odoslaní overenia presmeroval na prehľad kategórie – "
-                      "overenie sa neprijalo. Skontroluj BAZOS_TELEFON v .env a limity SMS.")
+                      "overenie sa neprijalo. Skontroluj ###07 v šablóne a limity SMS.")
         return False
 
     logging.info(f"Čakám na pole pre SMS kód (limit {sms_limit}s)...")
@@ -379,7 +364,7 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
                              "blokovan", "odoslať neskôr")
             if any(s in text_stranky for s in chybove_vzory):
                 logging.error("Bazoš nahlásil chybu pri overení telefónu – skontroluj "
-                              "číslo v .env a limity SMS. Text stránky vyššie ukáže detaily.")
+                              "###07 v šablóne a limity SMS. Text stránky vyššie ukáže detaily.")
                 return False
         except Exception:
             pass
@@ -460,7 +445,7 @@ def vypln_inzerat(driver, wait):
     wait.until(EC.presence_of_element_located((By.NAME, "nadpis")))
     vypis_elementy_formulara(driver)  # diagnostika reálnych názvov polí
 
-    # 1) Kategória – zo šablóny (###01), dynamický výber podľa textu
+    # 1) Kategória – ###01, dynamický výber podľa textu v selecte
     kategoria = SABLONA.get("###01")
     if kategoria:
         if not vyber_kategoriu(driver, kategoria):
@@ -468,20 +453,22 @@ def vypln_inzerat(driver, wait):
     else:
         logging.warning("Kategória (###01) nie je v šablóne – nenastavujem.")
 
-    # 2) Textové polia – šablóna má prednosť, fallback .env / predvolené
+    # 2) Textové polia – všetko zo šablóny (###02..###09)
     logging.info("Vyplňujem textové polia inzerátu...")
     polia = [
-        ("nadpis", SABLONA.get("###02", INZERAT_NADPIS)),
-        ("popis", SABLONA.get("###03", INZERAT_POPIS)),
-        ("cena", SABLONA.get("###04", INZERAT_CENA)),
-        ("jmeno", SABLONA.get("###06", MENO)),
-        ("telefoni", SABLONA.get("###07", TELEFON)),
-        ("heslobazar", SABLONA.get("###08", HESLO)),
+        ("nadpis", SABLONA.get("###02")),
+        ("popis", SABLONA.get("###03")),
+        ("cena", SABLONA.get("###04")),
+        ("jmeno", SABLONA.get("###06")),
+        ("telefoni", SABLONA.get("###07")),
+        ("heslobazar", SABLONA.get("###08")),
     ]
-    if SABLONA.get("###09") or MAIL:
-        polia.append(("maili", SABLONA.get("###09", MAIL)))
+    if SABLONA.get("###09"):
+        polia.append(("maili", SABLONA["###09"]))
     chybajuce = []
     for meno, hodnota in polia:
+        if not hodnota:
+            continue
         try:
             el = driver.find_element(By.NAME, meno)
             logging.debug(f"Vyplňujem pole '{meno}'...")
@@ -493,25 +480,28 @@ def vypln_inzerat(driver, wait):
         logging.warning(f"Chýbajúce polia: {chybajuce} – porovnaj s výpisom elementov vyššie.")
     logging.info(f"Vyplnených {len(polia) - len(chybajuce)}/{len(polia)} textových polí.")
 
-    # 3) PSČ/obec – pole 'lokalita' s autocomplete (###05, fallback .env)
-    psc = SABLONA.get("###05", PSC)
-    try:
-        lokalita = driver.find_element(By.NAME, "lokalita")
-        lokalita.clear()
-        lokalita.send_keys(psc)
-        logging.info(f"PSČ {psc} zadané do poľa 'lokalita', čakám na návrh...")
+    # 3) PSČ/obec – ###05, pole 'lokalita' s autocomplete (treba vybrať návrh)
+    psc = SABLONA.get("###05")
+    if psc:
         try:
-            navrhy = WebDriverWait(driver, 4).until(
-                lambda d: d.find_elements(By.CSS_SELECTOR, "#vysledekpscinsert *"))
-            for navrh in navrhy[:3]:
-                if navrh.is_displayed():
-                    logging.info(f"Vyberám návrh PSČ: {navrh.text.strip()[:40]}")
-                    navrh.click()
-                    break
-        except Exception:
-            logging.warning("Návrh PSČ sa neobjavil – nechávam zadané PSČ v poli.")
-    except NoSuchElementException:
-        logging.warning("Pole 'lokalita' sa nenašlo – PSČ sa nezadáva.")
+            lokalita = driver.find_element(By.NAME, "lokalita")
+            lokalita.clear()
+            lokalita.send_keys(psc)
+            logging.info(f"PSČ {psc} zadané do poľa 'lokalita', čakám na návrh...")
+            try:
+                navrhy = WebDriverWait(driver, 4).until(
+                    lambda d: d.find_elements(By.CSS_SELECTOR, "#vysledekpscinsert *"))
+                for navrh in navrhy[:3]:
+                    if navrh.is_displayed():
+                        logging.info(f"Vyberám návrh PSČ: {navrh.text.strip()[:40]}")
+                        navrh.click()
+                        break
+            except Exception:
+                logging.warning("Návrh PSČ sa neobjavil – nechávam zadané PSČ v poli.")
+        except NoSuchElementException:
+            logging.warning("Pole 'lokalita' sa nenašlo – PSČ sa nezadáva.")
+    else:
+        logging.warning("PSČ (###05) nie je v šablóne – nezadávam.")
 
     # 4) Fotky – modul_upload: všetky z obrazky/, jedna za druhou,
     #    po každej sa čaká na dokončenie uploadu (Dropzone XHR)
@@ -538,6 +528,17 @@ def odosli_inzerat(driver):
 # ==========================================
 # 7. HLAVNÝ EXEKUČNÝ BLOK
 # ==========================================
+def skontroluj_sablona():
+    """Overí, že šablóna obsahuje povinné polia – inak ukončí skript."""
+    chybajuce = [i for i in POVINNE_V_SABLONE if not SABLONA.get(i)]
+    if chybajuce:
+        logging.error(f"Šablóna {CESTA_K_SABLONE} nemá povinné polia: {chybajuce}")
+        logging.error("Skopíruj sablona_inzeratu.example.txt -> sablona_inzeratu.txt "
+                      "a vyplň svoje údaje (###ID:hodnota).")
+        return False
+    return True
+
+
 def pridaj_inzerat_bazos(sms_limit=None):
     driver = None
     try:
@@ -584,4 +585,6 @@ if __name__ == "__main__":
     args = parse_args()
     if args.debug:
         aktivuj_debug()
+    if not skontroluj_sablona():
+        sys.exit(1)
     pridaj_inzerat_bazos(sms_limit=args.sms_timeout)
