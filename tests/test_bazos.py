@@ -38,7 +38,7 @@ def test_funkcie_existuju():
     for name in ("parse_args", "aktivuj_debug", "log_viditelny_text", "vstup",
                  "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
-                 "vypln_inzerat", "pridaj_inzerat_bazos"):
+                 "vypis_elementy_formulara", "vypln_inzerat", "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
 

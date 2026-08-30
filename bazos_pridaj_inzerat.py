@@ -382,18 +382,49 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
 # ==========================================
 # 6. VYPLNENIE FORMULÁRA INZERÁTU
 # ==========================================
+def vypis_elementy_formulara(driver):
+    """Diagnostika: vypíše všetky inputy/selecty/textarey stránky (name:typ).
+
+    Reálne názvy polí Bazoš mení – tento výpis ukáže, ako sa pole volá
+    naozaj, keď sa niektorý známy názov nenájde.
+    """
+    try:
+        polia = []
+        for tag in ("input", "select", "textarea"):
+            for el in driver.find_elements(By.TAG_NAME, tag):
+                meno = el.get_attribute("name") or "?"
+                typ = el.get_attribute("type") or tag
+                polia.append(f"{meno}:{typ}")
+        logging.info(f"Elementy formulára ({len(polia)}): " + ", ".join(polia))
+    except Exception as e:
+        logging.warning(f"Elementy formulára sa nepodarilo načítať: {e}")
+
+
 def vypln_inzerat(driver, wait):
-    """Počká na formulár inzerátu a vyplní ho (aj fotku)."""
+    """Počká na formulár inzerátu a vyplní ho (aj fotku).
+
+    Neznáme názvy polí sa preskočia s varovaním – beh nespadne.
+    """
     logging.info("Čakám na formulár inzerátu (element 'nadpis')...")
     wait.until(EC.presence_of_element_located((By.NAME, "nadpis")))
+    vypis_elementy_formulara(driver)  # diagnostika reálnych názvov polí
 
     logging.info("Vyplňujem textové polia inzerátu...")
     polia = (("nadpis", INZERAT_NADPIS), ("popis", INZERAT_POPIS), ("cena", INZERAT_CENA),
              ("psc", PSC), ("jmeno", MENO), ("telefon", TELEFON), ("heslo", HESLO))
+    chybajuce = []
     for meno, hodnota in polia:
-        logging.debug(f"Vyplňujem pole '{meno}'...")
-        driver.find_element(By.NAME, meno).send_keys(hodnota)
-    logging.info("Všetkých 7 textových polí vyplnených.")
+        try:
+            el = driver.find_element(By.NAME, meno)
+            logging.debug(f"Vyplňujem pole '{meno}'...")
+            el.send_keys(hodnota)
+        except NoSuchElementException:
+            chybajuce.append(meno)
+            logging.warning(f"Pole '{meno}' sa na stránke nenašlo – preskakujem.")
+    if chybajuce:
+        logging.warning(f"Chýbajúce polia: {chybajuce} – porovnaj s výpisom elementov "
+                        "vyššie a uprav názvy v skripte.")
+    logging.info(f"Vyplnených {len(polia) - len(chybajuce)}/{len(polia)} textových polí.")
 
     logging.info(f"Odosielam súbor z cesty: {CESTA_K_FOTKE}")
     if os.path.exists(CESTA_K_FOTKE):
