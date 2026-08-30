@@ -18,11 +18,19 @@ Verzia 3:
       /pridat-inzerat.php môže Bazoš obslúžiť prehľadom kategórie)
     - pri nezobrazenej forme sa presne zaloguje, čo stránka vrátila
 
+Verzia 4:
+    - flag --debug: predĺžené časové limity (SMS čakanie 300 s) a podrobný
+      DEBUG log (stav stránky každú sekundu pri čakaní na SMS kód)
+    - flag --sms-timeout N: vlastný limit čakania na SMS kód (sekundy)
+    - logovanie viditeľného textu stránky po odoslaní overenia (zachytenie
+      hlášok Bazoša: limit, už overené, chybné číslo a pod.)
+
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
 import os
 import time
 import logging
+import argparse
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -85,12 +93,19 @@ INZERAT_CENA = "250"
 #         False = odošle formulár (production režim).
 DEBUG_CEKANIE = True
 
-# Ako dlho čakať na pole pre SMS kód po odoslaní overenia (sekundy).
-# SMS z Bazoša môže prísť aj po 1 minúte.
-SMS_CEKANIE_SEKUND = 120
+# ==========================================
+# 2c. ČASOVÉ LIMITY (sekundy)
+# ==========================================
+SMS_CEKANIE_SEKUND = 120           # čakanie na pole pre SMS kód (štandard)
+DEBUG_SMS_CEKANIE_SEKUND = 300     # čakanie na pole pre SMS kód s --debug
+LIMIT_NACITANIA = 15               # WebDriverWait: overovací formulár
+DEBUG_LIMIT_NACITANIA = 45         # s --debug
+LIMIT_FORMULARA_INZERATU = 30      # WebDriverWait: formulár inzerátu
+DEBUG_LIMIT_FORMULARA_INZERATU = 90  # s --debug
+DEBUG_MODE = False                 # zapína flag --debug
 
 # ==========================================
-# 2c. REÁLNE ELEMENTY STRÁNKY (zistené 29.8.2026)
+# 2d. REÁLNE ELEMENTY STRÁNKY (zistené 29.8.2026)
 # ==========================================
 # A) OVERENIE TELEFÓNU – zobrazí sa PRED formulárom inzerátu:
 #    form  name="formovereni"  action="/pridat-inzerat.php"
@@ -105,6 +120,34 @@ SMS_CEKANIE_SEKUND = 120
 # B) FORMULÁR INZERÁTU – objaví sa až po úspešnom overení telefónu:
 #    nadpis, popis, cena, psc, jmeno, telefon, heslo
 #    + input[type="file"] pre fotky + tlačidlo na odoslanie inzerátu
+
+# ==========================================
+# 2e. ARGUMENTY PRÍKAZOVÉHO RIADKA
+# ==========================================
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Bazoš automatizácia inzerátov (Selenium, Edge)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Predĺžené časové limity (SMS čakanie 300 s) a podrobný DEBUG log")
+    parser.add_argument("--sms-timeout", type=int, default=None, metavar="SEK",
+                        help="Vlastný limit čakania na SMS kód v sekundách (štandardne 120)")
+    return parser.parse_args(argv)
+
+
+def aktivuj_debug():
+    """Zapne DEBUG režim: predĺžené limity a logovacia úroveň DEBUG."""
+    global DEBUG_MODE
+    DEBUG_MODE = True
+    logging.getLogger().setLevel(logging.DEBUG)
+    logging.info("DEBUG režim: predĺžené časové limity + podrobný log.")
+
+
+def log_viditelny_text(driver, kontext):
+    """Zaloguje viditeľný text stránky (na zachytenie hlášok Bazoša)."""
+    try:
+        text = " ".join(driver.find_element(By.TAG_NAME, "body").text.split())
+        logging.info(f"[{kontext}] Text stránky ({len(text)} zn.): {text[:600]}")
+    except Exception as e:
+        logging.warning(f"[{kontext}] Text stránky sa nepodarilo načítať: {e}")
 
 # ==========================================
 # 3. SPUSTENIE PREHLIADAČA (EDGE, BEZ CHROME)
@@ -170,16 +213,23 @@ def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
 
     Vráti element, alebo None po vypršaní limitu.
     """
-    koniec = time.time() + casovy_limit
+    zaciatok = time.time()
+    koniec = zaciatok + casovy_limit
     while time.time() < koniec:
         try:
             # Ak sa objavil rovno formulár inzerátu, overenie netreba riešiť
             if driver.find_elements(By.NAME, "nadpis"):
+                logging.info(f"Objavil sa formulár inzerátu – overenie netreba ({int(time.time() - zaciatok)} s).")
                 return None
-            for inp in driver.find_elements(By.TAG_NAME, "input"):
+            inputs = driver.find_elements(By.TAG_NAME, "input")
+            logging.debug(f"Čakám na SMS kód ({int(time.time() - zaciatok)} s): "
+                          + ", ".join(f"{i.get_attribute('name') or '?'}:{i.get_attribute('type') or '?'}"
+                                      for i in inputs))
+            for inp in inputs:
                 typ = (inp.get_attribute("type") or "text").lower()
                 meno = (inp.get_attribute("name") or "").lower()
                 if typ in ("text", "tel", "number") and "teloverit" not in meno and inp.is_displayed():
+                    logging.info(f"Pole pre SMS kód nájdené po {int(time.time() - zaciatok)} s.")
                     return inp
         except Exception:
             pass
@@ -187,7 +237,7 @@ def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
     return None
 
 
-def over_telefon(driver, wait, telefon):
+def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
     """Vyplní Bazoš overovací formulár a nechá používateľa zadať SMS kód.
 
     Vráti True, ak prebehlo overenie (alebo už bolo hotové), False pri chybe.
@@ -209,6 +259,7 @@ def over_telefon(driver, wait, telefon):
         logging.error(f"Neočakávaná stránka – URL: {driver.current_url}")
         logging.error(f"Titulok: {driver.title}")
         logging.error(f"Nájdené inputy: {nazvy}")
+        log_viditelny_text(driver, "neočakávaná stránka")
         raise RuntimeError(
             "Bazoš neukázal overovací formulár (teloverit) ani formulár inzerátu (nadpis) – "
             "pravdepodobne bot-detekcia. Pošli log vyššie na analýzu."
@@ -225,20 +276,28 @@ def over_telefon(driver, wait, telefon):
     pole.send_keys(telefon)
     logging.info(f"Telefón {telefon} zadaný. Odosielam overenie – SMS kľúč príde na toto číslo.")
     driver.find_element(By.NAME, "Submit").click()
+    logging.info(f"Overenie odoslané – aktuálna URL: {driver.current_url}")
+    time.sleep(3)  # krátke okno na zachytenie hlášky Bazoša po odoslaní
+    log_viditelny_text(driver, "po odoslaní overenia")
 
-    logging.info(f"Čakám na pole pre SMS kód (limit {SMS_CEKANIE_SEKUND}s)...")
-    pole_kodu = najdi_pole_kodu(driver)
+    logging.info(f"Čakám na pole pre SMS kód (limit {sms_limit}s)...")
+    pole_kodu = najdi_pole_kodu(driver, casovy_limit=sms_limit)
 
     if pole_kodu is None:
-        # Skontrolujeme, či stránka nenahlásila chybu
+        log_viditelny_text(driver, "kód neprišiel – text stránky")
+        # Skontrolujeme, či stránka nenahlásila chybu (rozšírené kľúčové slová)
         try:
             text_stranky = driver.find_element(By.TAG_NAME, "body").text.lower()
-            if any(s in text_stranky for s in ("chybné telefónne", "chyba", "neplatné")):
-                logging.error("Bazoš nahlásil chybu pri overení telefónu – skontroluj číslo v .env.")
+            chybove_vzory = ("chybné telefónne", "chyba", "neplatné", "limit",
+                             "prekročen", "už overené", "nepodarilo", "neskôr",
+                             "blokovan", "odoslať neskôr")
+            if any(s in text_stranky for s in chybove_vzory):
+                logging.error("Bazoš nahlásil chybu pri overení telefónu – skontroluj "
+                              "číslo v .env a limity SMS. Text stránky vyššie ukáže detaily.")
                 return False
         except Exception:
             pass
-        logging.warning("Pole pre SMS kód sa nenašlo automaticky.")
+        logging.warning("Pole pre SMS kód sa nenašlo automaticky (SMS možno neprišla).")
         input("[MANUÁLNE] Ak sa v prehliadači objavilo pole pre kód, zadaj kód RUČNE "
               "a potvrď ho, potom stlač ENTER...")
         return True
@@ -270,13 +329,12 @@ def vypln_inzerat(driver, wait):
     wait.until(EC.presence_of_element_located((By.NAME, "nadpis")))
 
     logging.info("Vyplňujem textové polia inzerátu...")
-    driver.find_element(By.NAME, "nadpis").send_keys(INZERAT_NADPIS)
-    driver.find_element(By.NAME, "popis").send_keys(INZERAT_POPIS)
-    driver.find_element(By.NAME, "cena").send_keys(INZERAT_CENA)
-    driver.find_element(By.NAME, "psc").send_keys(PSC)
-    driver.find_element(By.NAME, "jmeno").send_keys(MENO)
-    driver.find_element(By.NAME, "telefon").send_keys(TELEFON)
-    driver.find_element(By.NAME, "heslo").send_keys(HESLO)
+    polia = (("nadpis", INZERAT_NADPIS), ("popis", INZERAT_POPIS), ("cena", INZERAT_CENA),
+             ("psc", PSC), ("jmeno", MENO), ("telefon", TELEFON), ("heslo", HESLO))
+    for meno, hodnota in polia:
+        logging.debug(f"Vyplňujem pole '{meno}'...")
+        driver.find_element(By.NAME, meno).send_keys(hodnota)
+    logging.info("Všetkých 7 textových polí vyplnených.")
 
     logging.info(f"Odosielam súbor z cesty: {CESTA_K_FOTKE}")
     if os.path.exists(CESTA_K_FOTKE):
@@ -293,7 +351,7 @@ def vypln_inzerat(driver, wait):
 # ==========================================
 # 7. HLAVNÝ EXEKUČNÝ BLOK
 # ==========================================
-def pridaj_inzerat_bazos():
+def pridaj_inzerat_bazos(sms_limit=None):
     driver = None
     try:
         driver = ziskaj_prehliadac()
@@ -302,14 +360,21 @@ def pridaj_inzerat_bazos():
         # Navigácia cez menu (kategória PC -> Pridať inzerát)
         naviguj_na_pridanie(driver)
 
-        wait = WebDriverWait(driver, 15)
+        # Efektívne limity: --sms-timeout > --debug > štandard
+        if sms_limit is None:
+            sms_limit = DEBUG_SMS_CEKANIE_SEKUND if DEBUG_MODE else SMS_CEKANIE_SEKUND
+        limit_nacitania = DEBUG_LIMIT_NACITANIA if DEBUG_MODE else LIMIT_NACITANIA
+        limit_inzerat = DEBUG_LIMIT_FORMULARA_INZERATU if DEBUG_MODE else LIMIT_FORMULARA_INZERATU
+        logging.info(f"Limity: overenie {limit_nacitania}s, SMS kód {sms_limit}s, formulár inzerátu {limit_inzerat}s.")
+
+        wait = WebDriverWait(driver, limit_nacitania)
 
         # 1) Overenie telefónu (ak ho Bazoš vyžaduje)
-        if not over_telefon(driver, wait, TELEFON):
+        if not over_telefon(driver, wait, TELEFON, sms_limit=sms_limit):
             return
 
         # 2) Vyplnenie formulára inzerátu (po overení sa objaví)
-        vypln_inzerat(driver, WebDriverWait(driver, 30))
+        vypln_inzerat(driver, WebDriverWait(driver, limit_inzerat))
 
         if DEBUG_CEKANIE:
             input("\n[DEBUG] Stlač ENTER pre ukončenie testu...\n")
@@ -330,4 +395,7 @@ def pridaj_inzerat_bazos():
             driver.quit()
 
 if __name__ == "__main__":
-    pridaj_inzerat_bazos()
+    args = parse_args()
+    if args.debug:
+        aktivuj_debug()
+    pridaj_inzerat_bazos(sms_limit=args.sms_timeout)

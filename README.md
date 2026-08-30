@@ -86,6 +86,31 @@ Fotka sa berie z `obrazky/server_foto1.jpg` (ak chýba, krok sa preskočí).
 Ak Bazoš neukáže formulár (bot-detekcia a pod.), skript zaloguje aktuálnu
 URL, titulok a nájdené inputy – pošli tento log na analýzu.
 
+## Ladenie (predĺžené časy a podrobný log)
+
+Ak nepríde SMS kód alebo sa skript zasekáva, spusti s flagom:
+
+```
+.venv\Scripts\python bazos_pridaj_inzerat.py --debug
+```
+
+Čo `--debug` robí:
+- logovacia úroveň DEBUG – pri čakaní na SMS kód vypíše stav stránky
+  každú sekundu (aké inputy sú na stránke)
+- čakanie na SMS kód predĺžené na 300 s (štandard 120 s)
+- limity načítania formulárov predĺžené (overenie 45 s, inzerát 90 s)
+- po odoslaní overenia zaloguje viditeľný text stránky – tam je vidno
+  hlášky Bazoša (napr. limit na SMS, "už overené", chybné číslo)
+
+Vlastný limit čakania na SMS kód (sekundy):
+```
+.venv\Scripts\python bazos_pridaj_inzerat.py --sms-timeout 600
+```
+
+Poznámka: ak Bazoš hlási limit na SMS overenia (po viacerých pokusoch
+za deň), flag to neobíde – ide o serverový limit, treba počkať (zvyčajne
+do ďalšieho dňa).
+
 ## URL (zistené 29.8.2026)
 
 - `https://pc.bazos.sk/pridat-inzerat.php` – UPLOAD formulár (overenie

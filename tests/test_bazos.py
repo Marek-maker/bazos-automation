@@ -35,10 +35,38 @@ def test_edge_only_bez_chrome():
 
 
 def test_funkcie_existuju():
-    for name in ("ziskaj_prehliadac", "odsuhlas_cookies", "najdi_pole_kodu",
+    for name in ("parse_args", "aktivuj_debug", "log_viditelny_text",
+                 "ziskaj_prehliadac", "odsuhlas_cookies", "najdi_pole_kodu",
                  "naviguj_na_pridanie", "over_telefon", "vypln_inzerat",
                  "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
+
+
+# ---------- flagy príkazového riadka ----------
+
+def test_parse_args_vychodzie():
+    args = b.parse_args([])
+    assert args.debug is False
+    assert args.sms_timeout is None
+
+
+def test_parse_args_debug_flag():
+    assert b.parse_args(["--debug"]).debug is True
+
+
+def test_parse_args_sms_timeout():
+    args = b.parse_args(["--sms-timeout", "600"])
+    assert args.sms_timeout == 600
+
+
+def test_debug_mode_vypnuty_standardne():
+    assert b.DEBUG_MODE is False
+
+
+def test_debug_limity_su_dlhsie():
+    assert b.DEBUG_SMS_CEKANIE_SEKUND > b.SMS_CEKANIE_SEKUND
+    assert b.DEBUG_LIMIT_NACITANIA > b.LIMIT_NACITANIA
+    assert b.DEBUG_LIMIT_FORMULARA_INZERATU > b.LIMIT_FORMULARA_INZERATU
 
 
 # ---------- dynamická detekcia poľa pre SMS kód ----------
