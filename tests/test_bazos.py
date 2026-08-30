@@ -47,6 +47,14 @@ def test_vylucene_polia():
         assert meno in b.VYLUCENE_POLIA
 
 
+def test_overenie_klika_v_ramci_formovereni():
+    """Submit overenia MUSÍ byť scoping do formovereni – inak sa odošle
+    vyhľadávací formulár (oba majú name='Submit'). Regresný test."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert 'find_element(By.NAME, "formovereni")' in src
+    assert './/input[@type=\'submit\']' in src or './/input[@type="submit"]' in src
+
+
 # ---------- flagy príkazového riadka ----------
 
 def test_parse_args_vychodzie():

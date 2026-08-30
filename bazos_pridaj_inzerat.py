@@ -310,7 +310,12 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
     pole.clear()
     pole.send_keys(telefon)
     logging.info(f"Telefón {telefon} zadaný. Odosielam overenie – SMS kľúč príde na toto číslo.")
-    driver.find_element(By.NAME, "Submit").click()
+    # POZOR: vyhľadávací aj overovací formulár majú input name="Submit" a
+    # vyhľadávací je v DOM skôr – bez scoping by sa odoslal "Hľadať" namiesto
+    # overenia (reálny bug zistený pri behu 30.8.2026). Klikáme VÝHRADNE
+    # v rámci overovacieho formulára (formovereni).
+    form_overeni = driver.find_element(By.NAME, "formovereni")
+    form_overeni.find_element(By.XPATH, ".//input[@type='submit']").click()
     logging.info(f"Overenie odoslané – aktuálna URL: {driver.current_url}")
     time.sleep(3)  # krátke okno na zachytenie hlášky Bazoša po odoslaní
     log_viditelny_text(driver, "po odoslaní overenia")
