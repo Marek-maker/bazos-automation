@@ -25,6 +25,13 @@ Verzia 4:
     - logovanie viditeľného textu stránky po odoslaní overenia (zachytenie
       hlášok Bazoša: limit, už overené, chybné číslo a pod.)
 
+Verzia 5:
+    - oprava detekcie poľa pre SMS kód: vyhľadávacie polia (hledat,
+      hlokalita, humkreis, cenaod, cenado) sa už nepovažujú za pole pre kód
+    - detekcia presmerovania na prehľad kategórie po odoslaní overenia
+      (okamžitá chyba namiesto čakania na kód)
+    - ošetrenie neinteraktívneho vstupu (EOF) – skript sa čisto ukončí
+
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
 import os
@@ -115,11 +122,17 @@ DEBUG_MODE = False                 # zapína flag --debug
 #
 # Po odoslaní príde na telefón SMS kľúč a stránka zobrazí pole pre kód.
 # Jeho názov stránka nedáva dopredu poznať – skript ho DETEKUJE dynamicky
-# (prvý nový viditeľný textový input, ktorý nie je teloverit).
+# (prvý nový viditeľný textový input, ktorý nie je teloverit ani pole
+# vyhľadávacieho formulára).
 #
 # B) FORMULÁR INZERÁTU – objaví sa až po úspešnom overení telefónu:
 #    nadpis, popis, cena, psc, jmeno, telefon, heslo
 #    + input[type="file"] pre fotky + tlačidlo na odoslanie inzerátu
+
+# Polia, ktoré NIE sú poľom pre SMS kód. Vyhľadávací formulár (formt) je na
+# KAŽDEJ stránke Bazoša – bez vylúčenia by sa humkreis ("Okolie v km") bral
+# ako pole pre kód (reálny bug zistený pri behu 30.8.2026).
+VYLUCENE_POLIA = ("teloverit", "hledat", "hlokalita", "humkreis", "cenaod", "cenado")
 
 # ==========================================
 # 2e. ARGUMENTY PRÍKAZOVÉHO RIADKA
@@ -148,6 +161,27 @@ def log_viditelny_text(driver, kontext):
         logging.info(f"[{kontext}] Text stránky ({len(text)} zn.): {text[:600]}")
     except Exception as e:
         logging.warning(f"[{kontext}] Text stránky sa nepodarilo načítať: {e}")
+
+
+def vstup(text):
+    """input() s ošetrením EOF – vráti None v neinteraktívnom režime."""
+    try:
+        return input(text).strip()
+    except EOFError:
+        return None
+
+
+def je_kategoria_prehlad(driver):
+    """True, ak stránka vyzerá ako prehľad kategórie (zoznam inzerátov).
+
+    Signatúra: stránkovanie 'Stránka: 1 2 3 ...' – na overovacom formulári
+    sa nevyskytuje. Bazoš naň presmeruje, keď overenie neprijme.
+    """
+    try:
+        text = driver.find_element(By.TAG_NAME, "body").text.lower()
+        return "stránka:" in text
+    except Exception:
+        return False
 
 # ==========================================
 # 3. SPUSTENIE PREHLIADAČA (EDGE, BEZ CHROME)
@@ -209,9 +243,10 @@ def naviguj_na_pridanie(driver):
 # 5. OVERENIE TELEFÓNU (SMS KĽÚČ)
 # ==========================================
 def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
-    """Dynamicky nájde pole pre SMS kód (prvý nový textový input ≠ teloverit).
+    """Dynamicky nájde pole pre SMS kód (prvý nový textový input).
 
-    Vráti element, alebo None po vypršaní limitu.
+    Vylúčené sú polia vyhľadávacieho formulára (VYLUCENE_POLIA) – tie sú na
+    každej stránke a NIE sú to polia pre kód. Vráti element, alebo None.
     """
     zaciatok = time.time()
     koniec = zaciatok + casovy_limit
@@ -228,7 +263,7 @@ def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
             for inp in inputs:
                 typ = (inp.get_attribute("type") or "text").lower()
                 meno = (inp.get_attribute("name") or "").lower()
-                if typ in ("text", "tel", "number") and "teloverit" not in meno and inp.is_displayed():
+                if typ in ("text", "tel", "number") and meno not in VYLUCENE_POLIA and inp.is_displayed():
                     logging.info(f"Pole pre SMS kód nájdené po {int(time.time() - zaciatok)} s.")
                     return inp
         except Exception:
@@ -280,6 +315,13 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
     time.sleep(3)  # krátke okno na zachytenie hlášky Bazoša po odoslaní
     log_viditelny_text(driver, "po odoslaní overenia")
 
+    # Bazoš občas overenie neprijme a presmeruje na prehľad kategórie –
+    # netreba potom čakať na kód, ktorý nikdy nepríde
+    if je_kategoria_prehlad(driver):
+        logging.error("Bazoš po odoslaní overenia presmeroval na prehľad kategórie – "
+                      "overenie sa neprijalo. Skontroluj BAZOS_TELEFON v .env a limity SMS.")
+        return False
+
     logging.info(f"Čakám na pole pre SMS kód (limit {sms_limit}s)...")
     pole_kodu = najdi_pole_kodu(driver, casovy_limit=sms_limit)
 
@@ -298,12 +340,17 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
         except Exception:
             pass
         logging.warning("Pole pre SMS kód sa nenašlo automaticky (SMS možno neprišla).")
-        input("[MANUÁLNE] Ak sa v prehliadači objavilo pole pre kód, zadaj kód RUČNE "
-              "a potvrď ho, potom stlač ENTER...")
+        if vstup("[MANUÁLNE] Ak sa v prehliadači objavilo pole pre kód, zadaj kód RUČNE "
+                 "a potvrď ho, potom stlač ENTER...") is None:
+            return False
         return True
 
     logging.info(f"Našiel som pole pre SMS kód (name='{pole_kodu.get_attribute('name') or '?'}').")
-    kod = input(f"[SMS] Kód prišiel na číslo {telefon}. Zadaj ho sem a stlač ENTER: ").strip()
+    kod = vstup(f"[SMS] Kód prišiel na číslo {telefon}. Zadaj ho sem a stlač ENTER: ")
+    if kod is None:
+        logging.error("Neinteraktívny režim – vstup z terminálu nie je dostupný. "
+                      "Spusti skript v bežnom termináli a zadaj kód.")
+        return False
     if not kod:
         logging.warning("Nezadaný kód – skúšam pokračovať bez neho.")
     pole_kodu.send_keys(kod)
@@ -316,7 +363,8 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
         tlacidlo.click()
     except Exception as e:
         logging.warning(f"Tlačidlo na potvrdenie kódu sa nenašlo automaticky ({e}).")
-        input("[MANUÁLNE] Potvrď kód v prehliadači a stlač ENTER...")
+        if vstup("[MANUÁLNE] Potvrď kód v prehliadači a stlač ENTER...") is None:
+            return False
     return True
 
 
@@ -377,7 +425,8 @@ def pridaj_inzerat_bazos(sms_limit=None):
         vypln_inzerat(driver, WebDriverWait(driver, limit_inzerat))
 
         if DEBUG_CEKANIE:
-            input("\n[DEBUG] Stlač ENTER pre ukončenie testu...\n")
+            if vstup("\n[DEBUG] Stlač ENTER pre ukončenie testu...\n") is None:
+                logging.info("Neinteraktívny režim – končím test.")
         else:
             # Pre produkčné nasadenie odomknúť:
             # driver.find_element(By.NAME, "odeslat").click()

@@ -35,11 +35,16 @@ def test_edge_only_bez_chrome():
 
 
 def test_funkcie_existuju():
-    for name in ("parse_args", "aktivuj_debug", "log_viditelny_text",
-                 "ziskaj_prehliadac", "odsuhlas_cookies", "najdi_pole_kodu",
-                 "naviguj_na_pridanie", "over_telefon", "vypln_inzerat",
-                 "pridaj_inzerat_bazos"):
+    for name in ("parse_args", "aktivuj_debug", "log_viditelny_text", "vstup",
+                 "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
+                 "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
+                 "vypln_inzerat", "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
+
+
+def test_vylucene_polia():
+    for meno in ("teloverit", "hledat", "hlokalita", "humkreis", "cenaod", "cenado"):
+        assert meno in b.VYLUCENE_POLIA
 
 
 # ---------- flagy príkazového riadka ----------
@@ -67,6 +72,37 @@ def test_debug_limity_su_dlhsie():
     assert b.DEBUG_SMS_CEKANIE_SEKUND > b.SMS_CEKANIE_SEKUND
     assert b.DEBUG_LIMIT_NACITANIA > b.LIMIT_NACITANIA
     assert b.DEBUG_LIMIT_FORMULARA_INZERATU > b.LIMIT_FORMULARA_INZERATU
+
+
+# ---------- detekcia prehľadu kategórie ----------
+
+class FakeBody:
+    def __init__(self, text):
+        self._t = text
+
+    @property
+    def text(self):
+        return self._t
+
+
+class FakeBodyDriver:
+    def __init__(self, text):
+        self.body_text = text
+
+    def find_element(self, by, val):
+        if by == "tag name" and val == "body":
+            return FakeBody(self.body_text)
+        raise RuntimeError("neočakávané volanie find_element")
+
+
+def test_kategoria_rozpoznana_podla_strankovania():
+    d = FakeBodyDriver("Inzeráty PC celkom ... Stránka: 1 2 3 4 5 Ďalšia ...")
+    assert b.je_kategoria_prehlad(d) is True
+
+
+def test_overovaci_formular_nie_je_kategoria():
+    d = FakeBodyDriver("Pred pridaním inzerátu je nutné overenie mobilného telefónu")
+    assert b.je_kategoria_prehlad(d) is False
 
 
 # ---------- dynamická detekcia poľa pre SMS kód ----------
@@ -125,6 +161,16 @@ class StateSearchOnly:
         return False, [FakeInput("hledat", typ="search"), FakeInput("teloverit")]
 
 
+class StateSearchTextFields:
+    """Regresný test: vyhľadávací formulár má aj textové polia (humkreis,
+    cenaod, cenado) – bez vylúčenia by sa brali ako pole pre SMS kód."""
+
+    def __call__(self):
+        return False, [FakeInput("hledat", typ="search"), FakeInput("hlokalita", typ="search"),
+                       FakeInput("humkreis", typ="text"), FakeInput("cenaod", typ="text"),
+                       FakeInput("cenado", typ="text"), FakeInput("teloverit", typ="text")]
+
+
 def test_detekcia_len_teloverit_vrati_none():
     r = b.najdi_pole_kodu(FakeDriver(StateOnlyTeloverit()), casovy_limit=2)
     assert r is None
@@ -145,4 +191,10 @@ def test_detekcia_rovno_formular_inzeratu():
 
 def test_detekcia_ignoruje_search_polia():
     r = b.najdi_pole_kodu(FakeDriver(StateSearchOnly()), casovy_limit=2)
+    assert r is None
+
+
+def test_detekcia_ignoruje_search_text_polia():
+    """humkreis/cenaod/cenado sú type=text, ale NESMIA byť pole pre kód."""
+    r = b.najdi_pole_kodu(FakeDriver(StateSearchTextFields()), casovy_limit=2)
     assert r is None
