@@ -7,14 +7,17 @@ import os
 import py_compile
 
 import bazos_pridaj_inzerat as b
+import modul_sablona
+import modul_upload
 
 PROJ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-# ---------- štruktúra modulu ----------
+# ---------- štruktúra modulov ----------
 
 def test_syntax():
-    py_compile.compile(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), doraise=True)
+    for rel in ("bazos_pridaj_inzerat.py", "modul_sablona.py", "modul_upload.py"):
+        py_compile.compile(os.path.join(PROJ, rel), doraise=True)
 
 
 def test_konstanty():
@@ -38,7 +41,7 @@ def test_funkcie_existuju():
     for name in ("parse_args", "aktivuj_debug", "log_viditelny_text", "vstup",
                  "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
-                 "najdi_fotku", "vypis_elementy_formulara", "pockaj_na_upload_fotky",
+                 "vyber_kategoriu", "vypis_elementy_formulara",
                  "vypln_inzerat", "odosli_inzerat", "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
@@ -56,40 +59,18 @@ def test_overenie_klika_v_ramci_formovereni():
     assert './/input[@type=\'submit\']' in src or './/input[@type="submit"]' in src
 
 
-def test_formular_nove_nazvy_pol():
-    """Formulár inzerátu podľa reálneho HTML (30.8.2026): kategória cez
-    select 'category', PSČ cez 'lokalita' (s autocomplete), Dropzone."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
-    assert 'KATEGORIA_PC_POCITACE' in src and 'select_by_value' in src
-    assert '"lokalita"' in src and 'vysledekpscinsert' in src
-    assert "#dropzonea input[type='file']" in src
-
-
 def test_persistentny_profil():
     """Overenie telefónu sa uchová medzi behmi cez --user-data-dir."""
     src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "PROFIL_EDGE" in src and "user-data-dir" in src
 
 
-def test_upload_ceka_na_dokoncenie():
-    """Dropzone nahráva cez XHR – pred odoslaním treba počkať na dz-success."""
+def test_hlavny_skript_pouziva_moduly():
+    """Hlavný skript musí používať modul šablóny aj modul uploadu."""
     src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
-    assert "pockaj_na_upload_fotky" in src
-    assert "dz-success" in src and "dz-uploading" in src and "dz-error" in src
-
-
-def test_najdi_fotku_vrati_obrazok():
-    fotka = b.najdi_fotku()
-    assert isinstance(fotka, str) and fotka
-    assert os.path.exists(fotka) or fotka == b.CESTA_K_FOTKE
-
-
-def test_kontaktne_policka_realne_nazvy():
-    """Kontaktné polia podľa reálneho HTML (30.8.2026): telefoni, heslobazar,
-    maili (voliteľný) – nie telefon/heslo z pôvodného reportu."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
-    assert '"telefoni"' in src and '"heslobazar"' in src and '"maili"' in src
-    assert "BAZOS_MAIL" in src
+    assert "from modul_sablona import" in src
+    assert "from modul_upload import" in src
+    assert "sablona_inzeratu.txt" in src
 
 
 def test_odoslanie_scoping_do_formulara():
@@ -99,6 +80,59 @@ def test_odoslanie_scoping_do_formulara():
     assert "def odosli_inzerat" in src
     assert 'find_element(By.NAME, "nadpis")' in src
     assert "./ancestor::form" in src
+
+
+# ---------- modul_sablona ----------
+
+def test_mapping_id_na_pole():
+    assert modul_sablona.MAPPING["###01"] == "category"
+    assert modul_sablona.MAPPING["###02"] == "nadpis"
+    assert modul_sablona.MAPPING["###03"] == "popis"
+    assert modul_sablona.MAPPING["###04"] == "cena"
+    assert modul_sablona.MAPPING["###05"] == "lokalita"
+    assert modul_sablona.MAPPING["###07"] == "telefoni"
+    assert modul_sablona.MAPPING["###08"] == "heslobazar"
+
+
+def test_nacitaj_sablona_zo_suboru():
+    """Reálna šablóna v repo sa načíta správne (###01..###05)."""
+    s = modul_sablona.nacitaj_sablona(os.path.join(PROJ, "sablona_inzeratu.txt"))
+    assert s.get("###01") == "PC, Počítače"
+    assert s.get("###02") == "Repasovaný Dell PowerEdge Server - Záruka"
+    assert s.get("###05") == "00000"
+    assert len(s) >= 5
+
+
+def test_nacitaj_sablona_preskoci_zly_riadok(tmp_path):
+    """Nezrozumiteľné riadky sa preskočia, dobré sa načítajú."""
+    subor = tmp_path / "sablona.txt"
+    subor.write_text("###01:PC, Počítače\nblabla bez id\n###02:Nadpis\n", encoding="utf-8")
+    s = modul_sablona.nacitaj_sablona(str(subor))
+    assert s == {"###01": "PC, Počítače", "###02": "Nadpis"}
+
+
+def test_nacitaj_sablona_chybajuci_subor(tmp_path):
+    assert modul_sablona.nacitaj_sablona(str(tmp_path / "neexistuje.txt")) == {}
+
+
+# ---------- modul_upload ----------
+
+def test_najdi_fotky_vrati_vsetky_obrazky():
+    fotky = modul_upload.najdi_fotky(os.path.join(PROJ, "obrazky"))
+    assert len(fotky) >= 1
+    for f in fotky:
+        assert f.lower().endswith(modul_upload.PRIPONY)
+
+
+def test_najdi_fotky_chybajuca_zlozka(tmp_path):
+    assert modul_upload.najdi_fotky(str(tmp_path / "nic")) == []
+
+
+def test_upload_ceka_na_dokoncenie():
+    """Dropzone nahráva cez XHR – pred odoslaním treba počkať na dz-success."""
+    src = open(os.path.join(PROJ, "modul_upload.py"), encoding="utf-8").read()
+    assert "pockaj_na_upload" in src and "dz-success" in src
+    assert "dz-uploading" in src and "dz-error" in src
 
 
 # ---------- flagy príkazového riadka ----------
@@ -126,6 +160,7 @@ def test_debug_limity_su_dlhsie():
     assert b.DEBUG_SMS_CEKANIE_SEKUND > b.SMS_CEKANIE_SEKUND
     assert b.DEBUG_LIMIT_NACITANIA > b.LIMIT_NACITANIA
     assert b.DEBUG_LIMIT_FORMULARA_INZERATU > b.LIMIT_FORMULARA_INZERATU
+    assert b.DEBUG_LIMIT_UPLOAD_SEKUND > b.LIMIT_UPLOAD_SEKUND
 
 
 # ---------- detekcia prehľadu kategórie ----------

@@ -19,10 +19,19 @@ Verzia 6: submit overenia scoping do formovereni, preferovaný názov poľa
          pre kód (klic), formulár inzerátu podľa reálneho HTML.
 Verzia 7: persistentný Edge profil (edge_profile/), čakanie na dokončenie
          uploadu fotky (dz-success), auto-výber fotky z obrazky/.
-Verzia 8:
-    - kontaktné polia podľa reálneho HTML (30.8.2026): jmeno, telefoni,
-      heslobazar, maili (voliteľný, BAZOS_MAIL z .env)
-    - odoslanie inzerátu scoping do formulára inzerátu (odosli_inzerat)
+Verzia 8: kontaktné polia podľa reálneho HTML (telefoni, heslobazar,
+         maili), odoslanie inzerátu scoping do formulára.
+Verzia 9:
+    - modulárne: modul_sablona.py (textové polia zo šablóny ###ID),
+      modul_upload.py (fotky jednu za druhou s čakaním na upload)
+    - textové polia inzerátu sa berú zo sablona_inzeratu.txt
+      (###01 kategória, ###02 nadpis, ###03 popis, ###04 cena,
+      ###05 lokalita/PSČ), kontakt z .env; šablóna má prednosť
+    - kategória sa vyberá dynamicky podľa textu možnosti v selecte
+
+Moduly:
+    modul_sablona.py – načítanie šablóny ###ID:hodnota + mapovanie
+    modul_upload.py  – Dropzone upload všetkých fotiek jedna za druhou
 
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
@@ -41,6 +50,10 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 # natívneho Selenium Manageru na Windows)
 from selenium.webdriver.edge.service import Service as EdgeService
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
+
+# Vlastné moduly
+from modul_sablona import MAPPING, nacitaj_sablona
+from modul_upload import nahraj_fotky
 
 # ==========================================
 # 1. KONFIGURÁCIA LOGOVANIA
@@ -66,7 +79,8 @@ if not all([MENO, TELEFON, HESLO, PSC]):
 
 # Dynamické cesty (nezávislé od OS / aktuálneho adresára)
 AKTUALNA_ZLOZKA = os.path.dirname(os.path.abspath(__file__))
-CESTA_K_FOTKE = os.path.join(AKTUALNA_ZLOZKA, "obrazky", "server_foto1.jpg")
+ZLOZKA_OBRAZKOV = os.path.join(AKTUALNA_ZLOZKA, "obrazky")
+CESTA_K_SABLONE = os.path.join(AKTUALNA_ZLOZKA, "sablona_inzeratu.txt")
 # Persistentný Edge profil: uchová cookies aj overenie telefónu medzi
 # behmi – nevyčerpáva sa limit na SMS pri každom spustení.
 PROFIL_EDGE = os.path.join(AKTUALNA_ZLOZKA, "edge_profile")
@@ -82,14 +96,15 @@ URL_KATEGORIA_PC = "https://pc.bazos.sk/"
 URL_PRIDAT_INZERAT = "https://pc.bazos.sk/pridat-inzerat.php"
 
 # ==========================================
-# 2b. TESTOVACIE DÁTA INZERÁTU
-# (v ďalšej fáze nahradené parsovaním šablónových textov inzerátov)
+# 2b. ŠABLÓNA INZERÁTU (textové polia)
 # ==========================================
-INZERAT_NADPIS = "Repasovaný Dell PowerEdge Server - Záruka"
-INZERAT_POPIS = "Plne funkčný, vyčistený a pretestovaný enterprise server vhodný do racku."
-INZERAT_CENA = "250"
-# Hodnota selectu name="category" pre "PC, Počítače" (zistená 30.8.2026 z reálneho HTML)
-KATEGORIA_PC_POCITACE = "12"
+# Textové polia inzerátu sa berú zo sablona_inzeratu.txt (###ID:hodnota).
+# Šablóna má prednosť; ak pole v šablóne chýba, použije sa .env alebo
+# predvolená hodnota nižšie.
+SABLONA = nacitaj_sablona(CESTA_K_SABLONE)
+INZERAT_NADPIS = "Repasovaný Dell PowerEdge Server - Záruka"  # fallback pre ###02
+INZERAT_POPIS = "Plne funkčný, vyčistený a pretestovaný enterprise server vhodný do racku."  # fallback ###03
+INZERAT_CENA = "250"  # fallback pre ###04
 
 # [DEBUG] True  = formulár sa vyplní a čaká na ENTER (inzerát sa NEODOŠLE).
 #         False = odošle formulár (production režim).
@@ -104,7 +119,7 @@ LIMIT_NACITANIA = 15               # WebDriverWait: overovací formulár
 DEBUG_LIMIT_NACITANIA = 45         # s --debug
 LIMIT_FORMULARA_INZERATU = 30      # WebDriverWait: formulár inzerátu
 DEBUG_LIMIT_FORMULARA_INZERATU = 90  # s --debug
-LIMIT_UPLOAD_SEKUND = 60           # čakanie na dokončenie uploadu fotky
+LIMIT_UPLOAD_SEKUND = 60           # čakanie na dokončenie uploadu (na fotku)
 DEBUG_LIMIT_UPLOAD_SEKUND = 120    # s --debug
 DEBUG_MODE = False                 # zapína flag --debug
 
@@ -124,13 +139,13 @@ DEBUG_MODE = False                 # zapína flag --debug
 #
 # B) FORMULÁR INZERÁTU – objaví sa až po úspešnom overení telefónu
 #    (reálne HTML zistené 30.8.2026):
-#    select   name="category"  – kategória (PC, Počítače = "12")
+#    select   name="category"  – kategória (vyberá sa podľa textu zo šablóny)
 #    input    name="nadpis"    – nadpis inzerátu
 #    textarea name="popis"     – text inzerátu
 #    input    name="cena"      – cena v € (+ select name="cenavyber")
 #    input    name="lokalita"  – PSČ/obec s autocomplete (naseptavacpscinsert)
 #    fotky: Dropzone (button#uploadbutton, div#dropzonea) – JS upload,
-#           po pridaní súboru sa čaká na .dz-success
+#           po každej fotke sa čaká na .dz-success (modul_upload)
 #
 # C) KONTAKTNÉ ÚDAJE (spodná časť formulára inzerátu, 30.8.2026):
 #    input  name="jmeno"      – meno predávajúceho
@@ -400,16 +415,22 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
 # ==========================================
 # 6. VYPLNENIE FORMULÁRA INZERÁTU
 # ==========================================
-def najdi_fotku():
-    """Prvá fotka (jpg/jpeg/png/webp) v obrazky/, inak fallback CESTA_K_FOTKE."""
-    zlozka = os.path.join(AKTUALNA_ZLOZKA, "obrazky")
-    try:
-        for sub in sorted(os.listdir(zlozka)):
-            if sub.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-                return os.path.join(zlozka, sub)
-    except OSError:
-        pass
-    return CESTA_K_FOTKE
+def vyber_kategoriu(driver, nazov_alebo_hodnota):
+    """Vyberie kategóriu v selecte 'category' podľa textu možnosti.
+
+    Ak je zadaná číselná hodnota, vyberie sa priamo. Vráti True pri úspechu.
+    """
+    vyber = Select(driver.find_element(By.NAME, "category"))
+    for opt in vyber.options:
+        if opt.text.strip().lower() == nazov_alebo_hodnota.lower():
+            vyber.select_by_value(opt.get_attribute("value"))
+            logging.info(f"Kategória vybraná: '{opt.text.strip()}' (value={opt.get_attribute('value')}).")
+            return True
+    if nazov_alebo_hodnota.isdigit():
+        vyber.select_by_value(nazov_alebo_hodnota)
+        logging.info(f"Kategória vybraná podľa hodnoty: {nazov_alebo_hodnota}.")
+        return True
+    return False
 
 
 def vypis_elementy_formulara(driver):
@@ -430,33 +451,8 @@ def vypis_elementy_formulara(driver):
         logging.warning(f"Elementy formulára sa nepodarilo načítať: {e}")
 
 
-def pockaj_na_upload_fotky(driver, casovy_limit=LIMIT_UPLOAD_SEKUND):
-    """Počká, kým Dropzone dokončí nahrávanie fotky (dz-success, nič nebeží).
-
-    Dropzone nahráva cez XHR po pridaní súboru – odoslať inzerát sa smie
-    až po dokončení uploadu. Vráti True pri úspechu.
-    """
-    zaciatok = time.time()
-    while time.time() - zaciatok < casovy_limit:
-        try:
-            uspech = len(driver.find_elements(By.CSS_SELECTOR, "#dropzonea .dz-success"))
-            bezi = len(driver.find_elements(By.CSS_SELECTOR, "#dropzonea .dz-uploading"))
-            chyba = len(driver.find_elements(By.CSS_SELECTOR, "#dropzonea .dz-error"))
-            if chyba:
-                logging.warning("Dropzone nahlásil chybu pri nahrávaní fotky.")
-                return False
-            if uspech > 0 and bezi == 0:
-                logging.info(f"Upload fotky dokončený ({uspech} úspešných, 0 bežiacich).")
-                return True
-        except Exception:
-            pass
-        time.sleep(1)
-    logging.warning(f"Čakanie na upload fotky vypršalo ({casovy_limit} s).")
-    return False
-
-
 def vypln_inzerat(driver, wait):
-    """Počká na formulár inzerátu a vyplní ho (aj fotku).
+    """Počká na formulár inzerátu a vyplní ho (texty zo šablóny, fotky z modulu).
 
     Neznáme názvy polí sa preskočia s varovaním – beh nespadne.
     """
@@ -464,25 +460,26 @@ def vypln_inzerat(driver, wait):
     wait.until(EC.presence_of_element_located((By.NAME, "nadpis")))
     vypis_elementy_formulara(driver)  # diagnostika reálnych názvov polí
 
-    # 1) Kategória – nový formulár ju vyžaduje (PC, Počítače = "12")
-    try:
-        vyber = Select(driver.find_element(By.NAME, "category"))
-        aktualna = vyber.first_selected_option.get_attribute("value")
-        if aktualna in ("", "0"):
-            vyber.select_by_value(KATEGORIA_PC_POCITACE)
-            logging.info(f"Kategória nastavená na value={KATEGORIA_PC_POCITACE} (PC, Počítače).")
-        else:
-            logging.info(f"Kategória už zvolená (value={aktualna}).")
-    except NoSuchElementException:
-        logging.warning("Select 'category' sa nenašiel – kategória sa nenastavuje.")
+    # 1) Kategória – zo šablóny (###01), dynamický výber podľa textu
+    kategoria = SABLONA.get("###01")
+    if kategoria:
+        if not vyber_kategoriu(driver, kategoria):
+            logging.warning(f"Kategória '{kategoria}' sa v selecte nenašla.")
+    else:
+        logging.warning("Kategória (###01) nie je v šablóne – nenastavujem.")
 
-    # 2) Textové polia (kontaktné názvy podľa reálneho HTML: telefoni,
-    #    heslobazar; maili je voliteľný – len ak je BAZOS_MAIL v .env)
+    # 2) Textové polia – šablóna má prednosť, fallback .env / predvolené
     logging.info("Vyplňujem textové polia inzerátu...")
-    polia = [("nadpis", INZERAT_NADPIS), ("popis", INZERAT_POPIS), ("cena", INZERAT_CENA),
-             ("jmeno", MENO), ("telefoni", TELEFON), ("heslobazar", HESLO)]
-    if MAIL:
-        polia.append(("maili", MAIL))
+    polia = [
+        ("nadpis", SABLONA.get("###02", INZERAT_NADPIS)),
+        ("popis", SABLONA.get("###03", INZERAT_POPIS)),
+        ("cena", SABLONA.get("###04", INZERAT_CENA)),
+        ("jmeno", SABLONA.get("###06", MENO)),
+        ("telefoni", SABLONA.get("###07", TELEFON)),
+        ("heslobazar", SABLONA.get("###08", HESLO)),
+    ]
+    if SABLONA.get("###09") or MAIL:
+        polia.append(("maili", SABLONA.get("###09", MAIL)))
     chybajuce = []
     for meno, hodnota in polia:
         try:
@@ -496,12 +493,13 @@ def vypln_inzerat(driver, wait):
         logging.warning(f"Chýbajúce polia: {chybajuce} – porovnaj s výpisom elementov vyššie.")
     logging.info(f"Vyplnených {len(polia) - len(chybajuce)}/{len(polia)} textových polí.")
 
-    # 3) PSČ/obec – pole 'lokalita' s autocomplete (treba vybrať návrh)
+    # 3) PSČ/obec – pole 'lokalita' s autocomplete (###05, fallback .env)
+    psc = SABLONA.get("###05", PSC)
     try:
         lokalita = driver.find_element(By.NAME, "lokalita")
         lokalita.clear()
-        lokalita.send_keys(PSC)
-        logging.info(f"PSČ {PSC} zadané do poľa 'lokalita', čakám na návrh...")
+        lokalita.send_keys(psc)
+        logging.info(f"PSČ {psc} zadané do poľa 'lokalita', čakám na návrh...")
         try:
             navrhy = WebDriverWait(driver, 4).until(
                 lambda d: d.find_elements(By.CSS_SELECTOR, "#vysledekpscinsert *"))
@@ -515,22 +513,12 @@ def vypln_inzerat(driver, wait):
     except NoSuchElementException:
         logging.warning("Pole 'lokalita' sa nenašlo – PSČ sa nezadáva.")
 
-    # 4) Fotky – Dropzone (input v #dropzonea). Po pridaní súboru sa
-    #    POČKÁ na dokončenie uploadu (XHR) – inak by sa inzerát odoslal
-    #    bez fotky.
-    fotka = najdi_fotku()
-    logging.info(f"Odosielam súbor z cesty: {fotka}")
-    if os.path.exists(fotka):
-        try:
-            upload_input = driver.find_element(By.CSS_SELECTOR, "#dropzonea input[type='file']")
-        except NoSuchElementException:
-            upload_input = driver.find_element(By.XPATH, "//input[@type='file']")
-        upload_input.send_keys(fotka)
-        logging.info("Fotka priradená – čakám na dokončenie uploadu...")
-        upload_limit = DEBUG_LIMIT_UPLOAD_SEKUND if DEBUG_MODE else LIMIT_UPLOAD_SEKUND
-        pockaj_na_upload_fotky(driver, casovy_limit=upload_limit)
-    else:
-        logging.warning(f"Súbor {fotka} NEEXISTUJE! Krok s fotkou bol preskočený.")
+    # 4) Fotky – modul_upload: všetky z obrazky/, jedna za druhou,
+    #    po každej sa čaká na dokončenie uploadu (Dropzone XHR)
+    logging.info(f"Nahrávam fotky z: {ZLOZKA_OBRAZKOV}")
+    upload_limit = DEBUG_LIMIT_UPLOAD_SEKUND if DEBUG_MODE else LIMIT_UPLOAD_SEKUND
+    pocet = nahraj_fotky(driver, ZLOZKA_OBRAZKOV, casovy_limit=upload_limit)
+    logging.info(f"Nahratých fotiek: {pocet}.")
 
     logging.info("DOKONČENÉ: Formulár bol úspešne vyplnený.")
 
