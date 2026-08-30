@@ -15,6 +15,9 @@ obrazky/*.jpeg
 obrazky/*.png
 obrazky/*.webp
 
+# ===== Persistentný Edge profil (cookies + overenie telefónu) =====
+edge_profile/
+
 # ===== OS / editory =====
 Thumbs.db
 Desktop.ini

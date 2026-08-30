@@ -38,7 +38,8 @@ def test_funkcie_existuju():
     for name in ("parse_args", "aktivuj_debug", "log_viditelny_text", "vstup",
                  "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
-                 "vypis_elementy_formulara", "vypln_inzerat", "pridaj_inzerat_bazos"):
+                 "najdi_fotku", "vypis_elementy_formulara", "pockaj_na_upload_fotky",
+                 "vypln_inzerat", "pridaj_inzerat_bazos"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
 
@@ -62,6 +63,25 @@ def test_formular_nove_nazvy_pol():
     assert 'KATEGORIA_PC_POCITACE' in src and 'select_by_value' in src
     assert '"lokalita"' in src and 'vysledekpscinsert' in src
     assert "#dropzonea input[type='file']" in src
+
+
+def test_persistentny_profil():
+    """Overenie telefónu sa uchová medzi behmi cez --user-data-dir."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "PROFIL_EDGE" in src and "user-data-dir" in src
+
+
+def test_upload_ceka_na_dokoncenie():
+    """Dropzone nahráva cez XHR – pred odoslaním treba počkať na dz-success."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "pockaj_na_upload_fotky" in src
+    assert "dz-success" in src and "dz-uploading" in src and "dz-error" in src
+
+
+def test_najdi_fotku_vrati_obrazok():
+    fotka = b.najdi_fotku()
+    assert isinstance(fotka, str) and fotka
+    assert os.path.exists(fotka) or fotka == b.CESTA_K_FOTKE
 
 
 # ---------- flagy príkazového riadka ----------

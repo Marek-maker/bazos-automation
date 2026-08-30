@@ -12,27 +12,19 @@ Migrácia z pyautogui (pevné súradnice pixelov, Linux-only) na Selenium:
 Verzia 2: podpora overenia telefónu (SMS kľúč) – Bazoš ho vyžaduje PRED
 zobrazením formulára inzerátu; SMS kód zadáva používateľ interaktívne.
 
-Verzia 3:
-    - výhradne Microsoft Edge (bez Chrome / bez inštalácie Chrome driveru)
-    - navigácia cez menu kategórie ako bežný používateľ
-    - pri nezobrazenej forme sa presne zaloguje, čo stránka vrátila
-
-Verzia 4:
-    - flag --debug: predĺžené časové limity (SMS čakanie 300 s) a podrobný log
-    - flag --sms-timeout N: vlastný limit čakania na SMS kód (sekundy)
-    - logovanie viditeľného textu stránky po odoslaní overenia
-
-Verzia 5:
-    - oprava detekcie poľa pre SMS kód: vylúčené vyhľadávacie polia
-    - detekcia presmerovania na prehľad kategórie po odoslaní overenia
-    - ošetrenie neinteraktívneho vstupu (EOF)
-
-Verzia 6:
-    - submit overenia scoping do formovereni (vyhľadávací aj overovací
-      formulár majú name=Submit – bez scoping by sa odoslal "Hľadať")
-    - preferovaný názov poľa pre SMS kód (name='klic')
-    - formulár inzerátu podľa reálneho HTML (30.8.2026): select category,
-      pole lokalita (PSČ s autocomplete), Dropzone na fotky
+Verzia 3: Edge-only + navigácia cez menu + logovanie nezobrazenej formy.
+Verzia 4: flag --debug (predĺžené limity + DEBUG log), --sms-timeout.
+Verzia 5: vylúčené vyhľadávacie polia z detekcie kódu, detekcia
+         presmerovania na kategóriu, EOF-safe vstup.
+Verzia 6: submit overenia scoping do formovereni, preferovaný názov poľa
+         pre kód (klic), formulár inzerátu podľa reálneho HTML
+         (category, lokalita s autocomplete, Dropzone fotky).
+Verzia 7:
+    - persistentný Edge profil (edge_profile/) – overenie telefónu
+      (cookies) sa uchová medzi behmi, nevyčerpáva sa limit na SMS
+    - čakanie na dokončenie uploadu fotky (Dropzone dz-success),
+      inak by sa inzerát odoslal bez fotky
+    - fotka sa vyberie automaticky z obrazky/ (prvá jpg/jpeg/png/webp)
 
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
@@ -76,6 +68,9 @@ if not all([MENO, TELEFON, HESLO, PSC]):
 # Dynamické cesty (nezávislé od OS / aktuálneho adresára)
 AKTUALNA_ZLOZKA = os.path.dirname(os.path.abspath(__file__))
 CESTA_K_FOTKE = os.path.join(AKTUALNA_ZLOZKA, "obrazky", "server_foto1.jpg")
+# Persistentný Edge profil: uchová cookies aj overenie telefónu medzi
+# behmi – nevyčerpáva sa limit na SMS pri každom spustení.
+PROFIL_EDGE = os.path.join(AKTUALNA_ZLOZKA, "edge_profile")
 
 # ==========================================
 # 2a. URL (zistené 29.8.2026 – curl + reálny prehliadač)
@@ -110,6 +105,8 @@ LIMIT_NACITANIA = 15               # WebDriverWait: overovací formulár
 DEBUG_LIMIT_NACITANIA = 45         # s --debug
 LIMIT_FORMULARA_INZERATU = 30      # WebDriverWait: formulár inzerátu
 DEBUG_LIMIT_FORMULARA_INZERATU = 90  # s --debug
+LIMIT_UPLOAD_SEKUND = 60           # čakanie na dokončenie uploadu fotky
+DEBUG_LIMIT_UPLOAD_SEKUND = 120    # s --debug
 DEBUG_MODE = False                 # zapína flag --debug
 
 # ==========================================
@@ -133,7 +130,8 @@ DEBUG_MODE = False                 # zapína flag --debug
 #    textarea name="popis"     – text inzerátu
 #    input    name="cena"      – cena v € (+ select name="cenavyber")
 #    input    name="lokalita"  – PSČ/obec s autocomplete (naseptavacpscinsert)
-#    fotky: Dropzone (button#uploadbutton, div#dropzonea) – JS upload
+#    fotky: Dropzone (button#uploadbutton, div#dropzonea) – JS upload,
+#           po pridaní súboru sa čaká na .dz-success
 
 # Polia, ktoré NIE sú poľom pre SMS kód. Vyhľadávací formulár (formt) je na
 # KAŽDEJ stránke Bazoša – bez vylúčenia by sa humkreis ("Okolie v km") bral
@@ -200,9 +198,13 @@ def ziskaj_prehliadac():
         options = webdriver.EdgeOptions()
         options.add_argument("--lang=sk-SK")  # slovenský Accept-Language
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        # Persistentný profil = overenie telefónu (cookies) prežije medzi behmi
+        options.add_argument(f"--user-data-dir={PROFIL_EDGE}")
+        logging.info(f"Edge profil: {PROFIL_EDGE}")
         return webdriver.Edge(service=EdgeService(cesta_k_driveru), options=options)
     except Exception as e:
         logging.error(f"Kritická chyba: Edge sa nepodarilo spustiť. Log: {e}")
+        logging.error(f"Poznámka: ak je profil {PROFIL_EDGE} zamknutý (beží Edge), zatvor ho a skús znova.")
         raise
 
 # ==========================================
@@ -286,6 +288,9 @@ def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
 
 def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
     """Vyplní Bazoš overovací formulár a nechá používateľa zadať SMS kód.
+
+    S persistentným profilom sa overenie uchová medzi behmi – ak je
+    telefón už overený, formulár inzerátu sa objaví rovno.
 
     Vráti True, ak prebehlo overenie (alebo už bolo hotové), False pri chybe.
     """
@@ -388,6 +393,18 @@ def over_telefon(driver, wait, telefon, sms_limit=SMS_CEKANIE_SEKUND):
 # ==========================================
 # 6. VYPLNENIE FORMULÁRA INZERÁTU
 # ==========================================
+def najdi_fotku():
+    """Prvá fotka (jpg/jpeg/png/webp) v obrazky/, inak fallback CESTA_K_FOTKE."""
+    zlozka = os.path.join(AKTUALNA_ZLOZKA, "obrazky")
+    try:
+        for sub in sorted(os.listdir(zlozka)):
+            if sub.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                return os.path.join(zlozka, sub)
+    except OSError:
+        pass
+    return CESTA_K_FOTKE
+
+
 def vypis_elementy_formulara(driver):
     """Diagnostika: vypíše všetky inputy/selecty/textarey stránky (name:typ).
 
@@ -404,6 +421,31 @@ def vypis_elementy_formulara(driver):
         logging.info(f"Elementy formulára ({len(polia)}): " + ", ".join(polia))
     except Exception as e:
         logging.warning(f"Elementy formulára sa nepodarilo načítať: {e}")
+
+
+def pockaj_na_upload_fotky(driver, casovy_limit=LIMIT_UPLOAD_SEKUND):
+    """Počká, kým Dropzone dokončí nahrávanie fotky (dz-success, nič nebeží).
+
+    Dropzone nahráva cez XHR po pridaní súboru – odoslať inzerát sa smie
+    až po dokončení uploadu. Vráti True pri úspechu.
+    """
+    zaciatok = time.time()
+    while time.time() - zaciatok < casovy_limit:
+        try:
+            uspech = len(driver.find_elements(By.CSS_SELECTOR, "#dropzonea .dz-success"))
+            bezi = len(driver.find_elements(By.CSS_SELECTOR, "#dropzonea .dz-uploading"))
+            chyba = len(driver.find_elements(By.CSS_SELECTOR, "#dropzonea .dz-error"))
+            if chyba:
+                logging.warning("Dropzone nahlásil chybu pri nahrávaní fotky.")
+                return False
+            if uspech > 0 and bezi == 0:
+                logging.info(f"Upload fotky dokončený ({uspech} úspešných, 0 bežiacich).")
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+    logging.warning(f"Čakanie na upload fotky vypršalo ({casovy_limit} s).")
+    return False
 
 
 def vypln_inzerat(driver, wait):
@@ -464,17 +506,22 @@ def vypln_inzerat(driver, wait):
     except NoSuchElementException:
         logging.warning("Pole 'lokalita' sa nenašlo – PSČ sa nezadáva.")
 
-    # 4) Fotky – nový formulár používa Dropzone (input v #dropzonea)
-    logging.info(f"Odosielam súbor z cesty: {CESTA_K_FOTKE}")
-    if os.path.exists(CESTA_K_FOTKE):
+    # 4) Fotky – Dropzone (input v #dropzonea). Po pridaní súboru sa
+    #    POČKÁ na dokončenie uploadu (XHR) – inak by sa inzerát odoslal
+    #    bez fotky.
+    fotka = najdi_fotku()
+    logging.info(f"Odosielam súbor z cesty: {fotka}")
+    if os.path.exists(fotka):
         try:
             upload_input = driver.find_element(By.CSS_SELECTOR, "#dropzonea input[type='file']")
         except NoSuchElementException:
             upload_input = driver.find_element(By.XPATH, "//input[@type='file']")
-        upload_input.send_keys(CESTA_K_FOTKE)
-        logging.info("Fotka bola úspešne priradená k formuláru.")
+        upload_input.send_keys(fotka)
+        logging.info("Fotka priradená – čakám na dokončenie uploadu...")
+        upload_limit = DEBUG_LIMIT_UPLOAD_SEKUND if DEBUG_MODE else LIMIT_UPLOAD_SEKUND
+        pockaj_na_upload_fotky(driver, casovy_limit=upload_limit)
     else:
-        logging.warning("Súbor s fotkou NEEXISTUJE! Krok s fotkou bol preskočený.")
+        logging.warning(f"Súbor {fotka} NEEXISTUJE! Krok s fotkou bol preskočený.")
 
     logging.info("DOKONČENÉ: Formulár bol úspešne vyplnený.")
 
