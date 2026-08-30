@@ -6,7 +6,7 @@ Bazoš.sk – automatizácia pridávania inzerátov (Selenium).
 Migrácia z pyautogui (pevné súradnice pixelov, Linux-only) na Selenium:
     - nezávislé od OS a rozlíšenia obrazovky
     - vyhľadávanie elementov cez HTML DOM (By.NAME, XPath)
-    - priame nahrávanie fotiek do <input type="file"> (bez OS dialógu)
+    - priame nahrávanie fotiek do upload elementu (bez OS dialógu)
     - citlivé údaje v .env (gitignored)
 
 Verzia 2: podpora overenia telefónu (SMS kľúč) – Bazoš ho vyžaduje PRED
@@ -14,23 +14,25 @@ zobrazením formulára inzerátu; SMS kód zadáva používateľ interaktívne.
 
 Verzia 3:
     - výhradne Microsoft Edge (bez Chrome / bez inštalácie Chrome driveru)
-    - navigácia cez menu kategórie ako bežný používateľ (priamy vstup na
-      /pridat-inzerat.php môže Bazoš obslúžiť prehľadom kategórie)
+    - navigácia cez menu kategórie ako bežný používateľ
     - pri nezobrazenej forme sa presne zaloguje, čo stránka vrátila
 
 Verzia 4:
-    - flag --debug: predĺžené časové limity (SMS čakanie 300 s) a podrobný
-      DEBUG log (stav stránky každú sekundu pri čakaní na SMS kód)
+    - flag --debug: predĺžené časové limity (SMS čakanie 300 s) a podrobný log
     - flag --sms-timeout N: vlastný limit čakania na SMS kód (sekundy)
-    - logovanie viditeľného textu stránky po odoslaní overenia (zachytenie
-      hlášok Bazoša: limit, už overené, chybné číslo a pod.)
+    - logovanie viditeľného textu stránky po odoslaní overenia
 
 Verzia 5:
-    - oprava detekcie poľa pre SMS kód: vyhľadávacie polia (hledat,
-      hlokalita, humkreis, cenaod, cenado) sa už nepovažujú za pole pre kód
+    - oprava detekcie poľa pre SMS kód: vylúčené vyhľadávacie polia
     - detekcia presmerovania na prehľad kategórie po odoslaní overenia
-      (okamžitá chyba namiesto čakania na kód)
-    - ošetrenie neinteraktívneho vstupu (EOF) – skript sa čisto ukončí
+    - ošetrenie neinteraktívneho vstupu (EOF)
+
+Verzia 6:
+    - submit overenia scoping do formovereni (vyhľadávací aj overovací
+      formulár majú name=Submit – bez scoping by sa odoslal "Hľadať")
+    - preferovaný názov poľa pre SMS kód (name='klic')
+    - formulár inzerátu podľa reálneho HTML (30.8.2026): select category,
+      pole lokalita (PSČ s autocomplete), Dropzone na fotky
 
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
@@ -41,7 +43,7 @@ import argparse
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
@@ -82,9 +84,6 @@ CESTA_K_FOTKE = os.path.join(AKTUALNA_ZLOZKA, "obrazky", "server_foto1.jpg")
 #   https://www.bazos.sk/pridat-inzerat.php – NEVIE upload (vracia prehľad)
 #   https://pc.bazos.sk/                    – prehľad kategórie PC
 #   https://www.bazos.sk/                   – hlavná stránka
-# Pozor: priamy vstup na /pridat-inzerat.php bez plných hlavičiek vracia
-# prehľad kategórie namiesto formulára → navigujeme cez menu ako bežný
-# používateľ (referrer + cookies sa nastavia prirodzene).
 URL_KATEGORIA_PC = "https://pc.bazos.sk/"
 URL_PRIDAT_INZERAT = "https://pc.bazos.sk/pridat-inzerat.php"
 
@@ -95,6 +94,8 @@ URL_PRIDAT_INZERAT = "https://pc.bazos.sk/pridat-inzerat.php"
 INZERAT_NADPIS = "Repasovaný Dell PowerEdge Server - Záruka"
 INZERAT_POPIS = "Plne funkčný, vyčistený a pretestovaný enterprise server vhodný do racku."
 INZERAT_CENA = "250"
+# Hodnota selectu name="category" pre "PC, Počítače" (zistená 30.8.2026 z reálneho HTML)
+KATEGORIA_PC_POCITACE = "12"
 
 # [DEBUG] True  = formulár sa vyplní a čaká na ENTER (inzerát sa NEODOŠLE).
 #         False = odošle formulár (production režim).
@@ -112,22 +113,27 @@ DEBUG_LIMIT_FORMULARA_INZERATU = 90  # s --debug
 DEBUG_MODE = False                 # zapína flag --debug
 
 # ==========================================
-# 2d. REÁLNE ELEMENTY STRÁNKY (zistené 29.8.2026)
+# 2d. REÁLNE ELEMENTY STRÁNKY (zistené 29.–30.8.2026)
 # ==========================================
 # A) OVERENIE TELEFÓNU – zobrazí sa PRED formulárom inzerátu:
 #    form  name="formovereni"  action="/pridat-inzerat.php"
 #    input name="podminky"  id="podminky"  type="checkbox"  – súhlas s podmienkami
 #    input name="teloverit" id="teloverit" type="text"      – telefónne číslo
 #    input name="Submit"    type="submit"  value="Odoslať"  – odoslať SMS kľúč
+#    (POZOR: vyhľadávací formulár má tiež input name="Submit" – submit
+#     overenia sa kliká VÝHRADNE v rámci formovereni)
 #
-# Po odoslaní príde na telefón SMS kľúč a stránka zobrazí pole pre kód.
-# Jeho názov stránka nedáva dopredu poznať – skript ho DETEKUJE dynamicky
-# (prvý nový viditeľný textový input, ktorý nie je teloverit ani pole
-# vyhľadávacieho formulára).
+# Po odoslaní príde na telefón SMS kľúč a stránka zobrazí pole pre kód:
+#    input name="klic" – mobilný kľúč (názov zistený reálnym behom)
 #
-# B) FORMULÁR INZERÁTU – objaví sa až po úspešnom overení telefónu:
-#    nadpis, popis, cena, psc, jmeno, telefon, heslo
-#    + input[type="file"] pre fotky + tlačidlo na odoslanie inzerátu
+# B) FORMULÁR INZERÁTU – objaví sa až po úspešnom overení telefónu
+#    (reálne HTML zistené 30.8.2026):
+#    select   name="category"  – kategória (PC, Počítače = "12")
+#    input    name="nadpis"    – nadpis inzerátu
+#    textarea name="popis"     – text inzerátu
+#    input    name="cena"      – cena v € (+ select name="cenavyber")
+#    input    name="lokalita"  – PSČ/obec s autocomplete (naseptavacpscinsert)
+#    fotky: Dropzone (button#uploadbutton, div#dropzonea) – JS upload
 
 # Polia, ktoré NIE sú poľom pre SMS kód. Vyhľadávací formulár (formt) je na
 # KAŽDEJ stránke Bazoša – bez vylúčenia by sa humkreis ("Okolie v km") bral
@@ -409,9 +415,23 @@ def vypln_inzerat(driver, wait):
     wait.until(EC.presence_of_element_located((By.NAME, "nadpis")))
     vypis_elementy_formulara(driver)  # diagnostika reálnych názvov polí
 
+    # 1) Kategória – nový formulár ju vyžaduje (PC, Počítače = "12")
+    try:
+        vyber = Select(driver.find_element(By.NAME, "category"))
+        aktualna = vyber.first_selected_option.get_attribute("value")
+        if aktualna in ("", "0"):
+            vyber.select_by_value(KATEGORIA_PC_POCITACE)
+            logging.info(f"Kategória nastavená na value={KATEGORIA_PC_POCITACE} (PC, Počítače).")
+        else:
+            logging.info(f"Kategória už zvolená (value={aktualna}).")
+    except NoSuchElementException:
+        logging.warning("Select 'category' sa nenašiel – kategória sa nenastavuje.")
+
+    # 2) Jednoduché textové polia (jmeno/telefon/heslo možno v novom
+    #    formulári neexistujú – preberajú sa z overenia; preskočia sa)
     logging.info("Vyplňujem textové polia inzerátu...")
     polia = (("nadpis", INZERAT_NADPIS), ("popis", INZERAT_POPIS), ("cena", INZERAT_CENA),
-             ("psc", PSC), ("jmeno", MENO), ("telefon", TELEFON), ("heslo", HESLO))
+             ("jmeno", MENO), ("telefon", TELEFON), ("heslo", HESLO))
     chybajuce = []
     for meno, hodnota in polia:
         try:
@@ -422,14 +442,35 @@ def vypln_inzerat(driver, wait):
             chybajuce.append(meno)
             logging.warning(f"Pole '{meno}' sa na stránke nenašlo – preskakujem.")
     if chybajuce:
-        logging.warning(f"Chýbajúce polia: {chybajuce} – porovnaj s výpisom elementov "
-                        "vyššie a uprav názvy v skripte.")
+        logging.warning(f"Chýbajúce polia: {chybajuce} – porovnaj s výpisom elementov vyššie.")
     logging.info(f"Vyplnených {len(polia) - len(chybajuce)}/{len(polia)} textových polí.")
 
+    # 3) PSČ/obec – pole 'lokalita' s autocomplete (treba vybrať návrh)
+    try:
+        lokalita = driver.find_element(By.NAME, "lokalita")
+        lokalita.clear()
+        lokalita.send_keys(PSC)
+        logging.info(f"PSČ {PSC} zadané do poľa 'lokalita', čakám na návrh...")
+        try:
+            navrhy = WebDriverWait(driver, 4).until(
+                lambda d: d.find_elements(By.CSS_SELECTOR, "#vysledekpscinsert *"))
+            for navrh in navrhy[:3]:
+                if navrh.is_displayed():
+                    logging.info(f"Vyberám návrh PSČ: {navrh.text.strip()[:40]}")
+                    navrh.click()
+                    break
+        except Exception:
+            logging.warning("Návrh PSČ sa neobjavil – nechávam zadané PSČ v poli.")
+    except NoSuchElementException:
+        logging.warning("Pole 'lokalita' sa nenašlo – PSČ sa nezadáva.")
+
+    # 4) Fotky – nový formulár používa Dropzone (input v #dropzonea)
     logging.info(f"Odosielam súbor z cesty: {CESTA_K_FOTKE}")
     if os.path.exists(CESTA_K_FOTKE):
-        # Nahrávanie obchádza OS dialóg – vkladá sa priamo do input tagu.
-        upload_input = driver.find_element(By.XPATH, "//input[@type='file']")
+        try:
+            upload_input = driver.find_element(By.CSS_SELECTOR, "#dropzonea input[type='file']")
+        except NoSuchElementException:
+            upload_input = driver.find_element(By.XPATH, "//input[@type='file']")
         upload_input.send_keys(CESTA_K_FOTKE)
         logging.info("Fotka bola úspešne priradená k formuláru.")
     else:

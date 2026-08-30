@@ -55,6 +55,15 @@ def test_overenie_klika_v_ramci_formovereni():
     assert './/input[@type=\'submit\']' in src or './/input[@type="submit"]' in src
 
 
+def test_formular_nove_nazvy_pol():
+    """Formulár inzerátu podľa reálneho HTML (30.8.2026): kategória cez
+    select 'category', PSČ cez 'lokalita' (s autocomplete), Dropzone."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert 'KATEGORIA_PC_POCITACE' in src and 'select_by_value' in src
+    assert '"lokalita"' in src and 'vysledekpscinsert' in src
+    assert "#dropzonea input[type='file']" in src
+
+
 # ---------- flagy príkazového riadka ----------
 
 def test_parse_args_vychodzie():
