@@ -9,9 +9,14 @@ Migrácia z pyautogui (pevné súradnice pixelov, Linux-only) na Selenium:
     - priame nahrávanie fotiek do <input type="file"> (bez OS dialógu)
     - citlivé údaje v .env (gitignored)
 
-Verzia 2: podpora overenia telefónu. Bazoš vyžaduje overenie mobilného
-telefónu (SMS kľúč) PRED zobrazením formulára inzerátu. Skript overenie
-vyplní sám a SMS kód zadá používateľ interaktívne do terminálu.
+Verzia 2: podpora overenia telefónu (SMS kľúč) – Bazoš ho vyžaduje PRED
+zobrazením formulára inzerátu; SMS kód zadáva používateľ interaktívne.
+
+Verzia 3:
+    - výhradne Microsoft Edge (bez Chrome / bez inštalácie Chrome driveru)
+    - navigácia cez menu kategórie ako bežný používateľ (priamy vstup na
+      /pridat-inzerat.php môže Bazoš obslúžiť prehľadom kategórie)
+    - pri nezobrazenej forme sa presne zaloguje, čo stránka vrátila
 
 Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 """
@@ -25,10 +30,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-# Explicitný webdriver-manager (obchádza zamrznutie natívneho Selenium Manageru)
-from selenium.webdriver.chrome.service import Service as ChromeService
+# Edge driver cez explicitný webdriver-manager (obchádza zamrznutie
+# natívneho Selenium Manageru na Windows)
 from selenium.webdriver.edge.service import Service as EdgeService
-from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 # ==========================================
@@ -57,6 +61,19 @@ AKTUALNA_ZLOZKA = os.path.dirname(os.path.abspath(__file__))
 CESTA_K_FOTKE = os.path.join(AKTUALNA_ZLOZKA, "obrazky", "server_foto1.jpg")
 
 # ==========================================
+# 2a. URL (zistené 29.8.2026 – curl + reálny prehliadač)
+# ==========================================
+#   https://pc.bazos.sk/pridat-inzerat.php  – UPLOAD (overenie → formulár inzerátu)
+#   https://www.bazos.sk/pridat-inzerat.php – NEVIE upload (vracia prehľad)
+#   https://pc.bazos.sk/                    – prehľad kategórie PC
+#   https://www.bazos.sk/                   – hlavná stránka
+# Pozor: priamy vstup na /pridat-inzerat.php bez plných hlavičiek vracia
+# prehľad kategórie namiesto formulára → navigujeme cez menu ako bežný
+# používateľ (referrer + cookies sa nastavia prirodzene).
+URL_KATEGORIA_PC = "https://pc.bazos.sk/"
+URL_PRIDAT_INZERAT = "https://pc.bazos.sk/pridat-inzerat.php"
+
+# ==========================================
 # 2b. TESTOVACIE DÁTA INZERÁTU
 # (v ďalšej fáze nahradené parsovaním šablónových textov inzerátov)
 # ==========================================
@@ -75,8 +92,6 @@ SMS_CEKANIE_SEKUND = 120
 # ==========================================
 # 2c. REÁLNE ELEMENTY STRÁNKY (zistené 29.8.2026)
 # ==========================================
-# Stránka: https://pc.bazos.sk/pridat-inzerat.php
-#
 # A) OVERENIE TELEFÓNU – zobrazí sa PRED formulárom inzerátu:
 #    form  name="formovereni"  action="/pridat-inzerat.php"
 #    input name="podminky"  id="podminky"  type="checkbox"  – súhlas s podmienkami
@@ -92,29 +107,23 @@ SMS_CEKANIE_SEKUND = 120
 #    + input[type="file"] pre fotky + tlačidlo na odoslanie inzerátu
 
 # ==========================================
-# 3. SPUSTENIE PREHLIADAČA (BYPASS WINAPI BUGU)
+# 3. SPUSTENIE PREHLIADAČA (EDGE, BEZ CHROME)
 # ==========================================
 def ziskaj_prehliadac():
-    """Pokúsi sa spustiť Chrome (fallback Edge) cez explicitný webdriver-manager."""
-    logging.info("Sťahujem/overujem ovládače cez webdriver-manager...")
-
+    """Spustí Microsoft Edge cez explicitný webdriver-manager (bez Chrome)."""
+    logging.info("Sťahujem/overujem Edge driver cez webdriver-manager...")
     try:
-        logging.info("Skúšam inicializovať Chrome...")
-        cesta_k_driveru = ChromeDriverManager().install()
-        return webdriver.Chrome(service=ChromeService(cesta_k_driveru))
-    except Exception as e:
-        logging.warning(f"Chrome zlyhal: {e}")
-
-    try:
-        logging.info("Skúšam inicializovať Edge...")
         cesta_k_driveru = EdgeChromiumDriverManager().install()
-        return webdriver.Edge(service=EdgeService(cesta_k_driveru))
+        options = webdriver.EdgeOptions()
+        options.add_argument("--lang=sk-SK")  # slovenský Accept-Language
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        return webdriver.Edge(service=EdgeService(cesta_k_driveru), options=options)
     except Exception as e:
-        logging.error(f"Kritická chyba: Žiadny prehliadač sa nepodarilo spustiť. Log: {e}")
+        logging.error(f"Kritická chyba: Edge sa nepodarilo spustiť. Log: {e}")
         raise
 
 # ==========================================
-# 4. OVERENIE TELEFÓNU (SMS KĽÚČ)
+# 4. NAVIGÁCIA (CEZ MENU – AKO BEŽNÝ POUŽÍVATEĽ)
 # ==========================================
 def odsuhlas_cookies(driver):
     """Najlepšie úsilie: klikne na tlačidlo 'Súhlasím' v cookie dialógu, ak existuje."""
@@ -129,6 +138,33 @@ def odsuhlas_cookies(driver):
         pass
 
 
+def naviguj_na_pridanie(driver):
+    """Otvori kategóriu PC a klikne na 'Pridať inzerát' v hlavičke.
+
+    Priamy driver.get() na /pridat-inzerat.php môže Bazoš obslúžiť prehľadom
+    kategórie namiesto formulára – navigácia cez menu tomu predchádza.
+    """
+    logging.info(f"Otvaram kategóriu PC: {URL_KATEGORIA_PC}")
+    driver.get(URL_KATEGORIA_PC)
+    odsuhlas_cookies(driver)
+
+    odkaz = None
+    for a in driver.find_elements(By.TAG_NAME, "a"):
+        if (a.text or "").strip() == "Pridať inzerát":
+            odkaz = a
+            break
+
+    if odkaz is None:
+        logging.warning("Odkaz 'Pridať inzerát' sa v hlavičke nenašiel – idem priamo na URL.")
+        driver.get(URL_PRIDAT_INZERAT)
+    else:
+        logging.info(f"Klikám na 'Pridať inzerát' ({odkaz.get_attribute('href')})")
+        odkaz.click()
+
+
+# ==========================================
+# 5. OVERENIE TELEFÓNU (SMS KĽÚČ)
+# ==========================================
 def najdi_pole_kodu(driver, casovy_limit=SMS_CEKANIE_SEKUND):
     """Dynamicky nájde pole pre SMS kód (prvý nový textový input ≠ teloverit).
 
@@ -161,8 +197,22 @@ def over_telefon(driver, wait, telefon):
     try:
         pole = wait.until(EC.presence_of_element_located((By.NAME, "teloverit")))
     except TimeoutException:
-        logging.info("Overenie telefónu sa nevyžaduje (už overené) – pokračujem na formulár inzerátu.")
-        return True
+        # Už overené – rovno formulár inzerátu?
+        if driver.find_elements(By.NAME, "nadpis"):
+            logging.info("Overenie telefónu sa nevyžaduje – formulár inzerátu je k dispozícii.")
+            return True
+        # Diagnostika: čo nám Bazoš vlastne vrátil?
+        try:
+            nazvy = [i.get_attribute("name") or "?" for i in driver.find_elements(By.TAG_NAME, "input")][:15]
+        except Exception:
+            nazvy = []
+        logging.error(f"Neočakávaná stránka – URL: {driver.current_url}")
+        logging.error(f"Titulok: {driver.title}")
+        logging.error(f"Nájdené inputy: {nazvy}")
+        raise RuntimeError(
+            "Bazoš neukázal overovací formulár (teloverit) ani formulár inzerátu (nadpis) – "
+            "pravdepodobne bot-detekcia. Pošli log vyššie na analýzu."
+        )
 
     logging.info("Bazoš vyžaduje overenie mobilného telefónu – vyplňujem overovací formulár...")
     try:
@@ -212,7 +262,7 @@ def over_telefon(driver, wait, telefon):
 
 
 # ==========================================
-# 5. VYPLNENIE FORMULÁRA INZERÁTU
+# 6. VYPLNENIE FORMULÁRA INZERÁTU
 # ==========================================
 def vypln_inzerat(driver, wait):
     """Počká na formulár inzerátu a vyplní ho (aj fotku)."""
@@ -241,7 +291,7 @@ def vypln_inzerat(driver, wait):
 
 
 # ==========================================
-# 6. HLAVNÝ EXEKUČNÝ BLOK
+# 7. HLAVNÝ EXEKUČNÝ BLOK
 # ==========================================
 def pridaj_inzerat_bazos():
     driver = None
@@ -249,10 +299,10 @@ def pridaj_inzerat_bazos():
         driver = ziskaj_prehliadac()
         driver.maximize_window()
 
-        logging.info("Navigujem priamo na URL formulára Bazoš.sk (PC kategória)...")
-        driver.get("https://pc.bazos.sk/pridat-inzerat.php")
+        # Navigácia cez menu (kategória PC -> Pridať inzerát)
+        naviguj_na_pridanie(driver)
 
-        wait = WebDriverWait(driver, 10)
+        wait = WebDriverWait(driver, 15)
 
         # 1) Overenie telefónu (ak ho Bazoš vyžaduje)
         if not over_telefon(driver, wait, TELEFON):
