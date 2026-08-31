@@ -26,3 +26,7 @@ Desktop.ini
 .vscode/
 .idea/
 *.log
+
+# ===== Build artefakty =====
+dist/
+*.egg-info/
