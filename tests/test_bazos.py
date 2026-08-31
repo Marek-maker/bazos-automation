@@ -72,6 +72,41 @@ def test_persistentny_profil():
     assert "PROFIL_EDGE" in src and "user-data-dir" in src
 
 
+def test_wdm_cache_valid_range_365():
+    """webdriver-manager po 1 dni považuje cache za expirovanú a znova sťahuje
+    driver (reálny bug 31.8.2026: download spadol na 'Could not reach host').
+    valid_range=365 zabezpečí použitie existujúcej cache. Regresný test."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "DriverCacheManager(valid_range=365)" in src
+
+
+def test_fallback_na_lokalnu_cache():
+    """Ak install() zlyhá (výpadok siete), použije sa najnovší driver z cache."""
+    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "def najdi_cached_driver" in src
+    assert "def ziskaj_cestu_drivera" in src
+    assert "ziskaj_cestu_drivera()" in src
+
+
+def test_najdi_cached_driver_vrati_najnovsi(tmp_path):
+    import os as _os
+    stara = tmp_path / "drivers" / "edgedriver" / "win64" / "151.0.0.0"
+    nova = tmp_path / "drivers" / "edgedriver" / "win64" / "152.0.0.0"
+    stara.mkdir(parents=True)
+    nova.mkdir(parents=True)
+    (stara / "msedgedriver.exe").write_bytes(b"x")
+    (nova / "msedgedriver.exe").write_bytes(b"y")
+    _os.utime(stara / "msedgedriver.exe", (1_000_000, 1_000_000))
+    _os.utime(nova / "msedgedriver.exe", (2_000_000, 2_000_000))
+    vysledok = b.najdi_cached_driver(koren=str(tmp_path))
+    assert vysledok is not None
+    assert vysledok.endswith("152.0.0.0" + _os.sep + "msedgedriver.exe")
+
+
+def test_najdi_cached_driver_prazdna_cache(tmp_path):
+    assert b.najdi_cached_driver(koren=str(tmp_path)) is None
+
+
 def test_hlavny_skript_pouziva_moduly():
     """Hlavný skript musí používať modul šablóny aj modul uploadu."""
     src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()

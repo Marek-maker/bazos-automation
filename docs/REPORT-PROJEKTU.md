@@ -25,8 +25,8 @@ FUNGUJE (overené reálnymi behmi 30.8.2026):
 - upload VŠETKÝCH fotiek z `obrazky/` jedna za druhou s čakaním na dokončenie
 - odoslanie inzerátu: implementované, ale ZABLOKOVANÉ (`DEBUG_CEKANIE = True`)
 
-TESTY: 36 passed (`pytest`, pytest.ini, testpaths=tests).
-GIT: 13 commitov, pracovný strom čistý.
+TESTY: 40 passed (`pytest`, pytest.ini, testpaths=tests).
+GIT: 14 commitov, pracovný strom čistý.
 
 ## 3. Architektúra
 
@@ -132,6 +132,14 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
   a pokračuje sa ďalšou.
 - jmeno/telefoni/heslobazar/maili môžu v budúcnosti zmeniť názvy – na
   začiatku behu sa vypíše diagnostika "Elementy formulára (N): ...".
+- webdriver-manager považuje cache drivera za expirovanú po 1 DNI
+  (valid_range=1) a znova sťahuje – 31.8.2026 download spadol na "Could not
+  reach host". FIX: `DriverCacheManager(valid_range=365)` + fallback
+  `najdi_cached_driver()` (najnovší msedgedriver.exe z ~/.wdm) v
+  `ziskaj_cestu_drivera()`.
+- Dropzone: `#dropzonea input[type='file']` zmizne z DOM po prvej fotke –
+  od 2. fotky nahráva fallback `//input[@type='file']` (funguje, robí DEBUG
+  šum s 404 stacktrace).
 
 ## 8. Ďalšie kroky (roadmap)
 
@@ -170,6 +178,6 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 | PSČ | pole lokalita (autocomplete) |
 | Fotky | Dropzone #dropzonea, čakať na .dz-success |
 | Šablóna | ###ID:hodnota, MAPPING v modul_sablona.py |
-| Testy | .venv\Scripts\python -m pytest (36) |
+| Testy | .venv\Scripts\python -m pytest (40) |
 | Profil | edge_profile/ (user-data-dir) |
 | Odoslanie | odosli_inzerat() – DEBUG_CEKANIE=False |

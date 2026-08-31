@@ -50,6 +50,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 # natívneho Selenium Manageru na Windows)
 from selenium.webdriver.edge.service import Service as EdgeService
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
+from webdriver_manager.core.driver_cache import DriverCacheManager
 
 # Vlastné moduly
 from modul_sablona import MAPPING, nacitaj_sablona
@@ -197,11 +198,48 @@ def je_kategoria_prehlad(driver):
 # ==========================================
 # 3. SPUSTENIE PREHLIADAČA (EDGE, BEZ CHROME)
 # ==========================================
+def najdi_cached_driver(koren=None):
+    """Najnovší msedgedriver.exe v lokálnej cache webdriver-manageru.
+
+    Fallback, keď install() zlyhá (napr. výpadok siete) – cache z predošlých
+    behov zvyčajne obsahuje funkčný driver správnej verzie.
+    """
+    import glob
+    koren = koren or os.path.join(os.path.expanduser("~"), ".wdm")
+    kandidati = glob.glob(
+        os.path.join(koren, "drivers", "edgedriver", "win64", "*", "msedgedriver.exe"))
+    if not kandidati:
+        return None
+    return max(kandidati, key=os.path.getmtime)
+
+
+def ziskaj_cestu_drivera():
+    """Vráti cestu k Edge driveru.
+
+    webdriver-manager s cache valid_range=365 dní (bez toho po 1 dni považuje
+    cache za expirovanú a znova sťahuje – reálny bug 31.8.2026, download spadol
+    na 'Could not reach host'). Pri zlyhaní install() (výpadok siete) sa použije
+    najnovší driver z lokálnej cache.
+    """
+    try:
+        return EdgeChromiumDriverManager(
+            cache_manager=DriverCacheManager(valid_range=365)).install()
+    except Exception as e:
+        logging.warning(f"webdriver-manager zlyhal ({e}) – hľadám driver v lokálnej cache...")
+        cesta = najdi_cached_driver()
+        if cesta is None:
+            logging.error("V cache nie je žiadny msedgedriver.exe – "
+                          "skontroluj pripojenie a skús znova.")
+            raise
+        logging.info(f"Používam driver z lokálnej cache: {cesta}")
+        return cesta
+
+
 def ziskaj_prehliadac():
     """Spustí Microsoft Edge cez explicitný webdriver-manager (bez Chrome)."""
     logging.info("Sťahujem/overujem Edge driver cez webdriver-manager...")
     try:
-        cesta_k_driveru = EdgeChromiumDriverManager().install()
+        cesta_k_driveru = ziskaj_cestu_drivera()
         options = webdriver.EdgeOptions()
         options.add_argument("--lang=sk-SK")  # slovenský Accept-Language
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
