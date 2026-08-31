@@ -71,30 +71,42 @@ Inštalácia stiahne aj závislosti (selenium, webdriver-manager) automaticky.
 
 Dáta (`sablona_inzeratu.txt`, `obrazky/`, `edge_profile/`) žijú MIMO balíka
 a balík ich hľadá v poradí:
-1. env `BAZOS_DATA_DIR` (ak je nastavený),
-2. aktuálny adresár (ak obsahuje `sablona_inzeratu.txt`),
-3. `~/.bazos-automation` (vytvorí sa).
+1. flag `--data-dir CESTA` (najvyššia prednosť),
+2. env `BAZOS_DATA_DIR` (ak je nastavený),
+3. aktuálny adresár (ak obsahuje `sablona_inzeratu.txt`),
+4. `~/.bazos-automation` (vytvorí sa).
 
-Príprava šablóny (prvý beh):
+Príprava šablóny (prvý beh – example šablóna je súčasťou balíka):
 
 ```
-copy sablona_inzeratu.example.txt sablona_inzeratu.txt
+bazos --init
 ```
 
-Do `sablona_inzeratu.txt` vyplň ###01–###09 (###01 kategória, ###02 nadpis,
-###03 popis, ###04 cena, ###05 PSČ, ###06 meno, ###07 telefón, ###08 heslo
-k inzerátu, ###09 e-mail voliteľný).
+`--init` vytvorí `sablona_inzeratu.txt` z vstavanej example do dátového
+adresára (existujúcu šablónu neprepíše). Potom do nej vyplň ###01–###09
+(###01 kategória, ###02 nadpis, ###03 popis, ###04 cena, ###05 PSČ,
+###06 meno, ###07 telefón, ###08 heslo k inzerátu, ###09 e-mail voliteľný).
 
-Nastavenie dátového adresára (Windows cmd):
+Výber dátového adresára – portable, bez pevných ciest používateľa:
+
+```
+bazos --data-dir C:\cesta\k\datam --neodosli
+```
+
+alebo cez env premennú (cmd):
 
 ```
 set BAZOS_DATA_DIR=C:\cesta\k\datam
-bazos --neodosli
 ```
 
-(PowerShell: `$env:BAZOS_DATA_DIR = "C:\cesta\k\datam"`). Alebo jednoducho
-spúšťaj `bazos` priamo z adresára, kde leží `sablona_inzeratu.txt` – vtedy
-env var netreba.
+alebo (PowerShell):
+
+```
+$env:BAZOS_DATA_DIR = "C:\cesta\k\datam"
+```
+
+alebo jednoducho spúšťaj `bazos` priamo z adresára, kde leží
+`sablona_inzeratu.txt` – vtedy nič nastavovať netreba.
 
 Prvý beh vytvorí `edge_profile/` a vyžiada SMS overenie telefónu – ďalšie
 behy už nie (overenie sa uchováva v profile).

@@ -293,6 +293,7 @@ def test_parse_args_vychodzie():
     assert args.sms_timeout is None
     assert args.neodosli is False
     assert args.init is False
+    assert args.data_dir is None
 
 
 def test_parse_args_debug_flag():
@@ -312,11 +313,15 @@ def test_parse_args_init_flag():
     assert b.parse_args(["--init"]).init is True
 
 
+def test_parse_args_data_dir():
+    assert b.parse_args(["--data-dir", "C:/moje/data"]).data_dir == "C:/moje/data"
+
+
 def test_inicializuj_sablona(tmp_path, monkeypatch):
     """bazos --init vytvorí šablónu z example do dátového adresára;
     existujúcu šablónu NEPREPÍŠE (regresný test: čistá inštalácia
     z PyPI nemá example súbor z gitu, preto je zabalený v balíku)."""
-    monkeypatch.setattr(b, "zisti_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(b, "DATA_DIR", str(tmp_path))
     assert b.inicializuj_sablona() == 0
     ciel = tmp_path / "sablona_inzeratu.txt"
     assert ciel.exists()
@@ -325,6 +330,50 @@ def test_inicializuj_sablona(tmp_path, monkeypatch):
     povodne = obsah
     assert b.inicializuj_sablona() == 1  # už existuje – neprepisuje
     assert ciel.read_text(encoding="utf-8") == povodne
+
+
+def test_zisti_data_dir_explicit_má_prednosť(monkeypatch, tmp_path):
+    """--data-dir má prednosť pred env aj aktuálnym adresárom."""
+    monkeypatch.setenv("BAZOS_DATA_DIR", str(tmp_path / "env"))
+    monkeypatch.chdir(tmp_path)
+    assert b.zisti_data_dir(str(tmp_path / "flag")) == str(tmp_path / "flag")
+
+
+def test_zisti_data_dir_env_pred_cwd(monkeypatch, tmp_path):
+    """BAZOS_DATA_DIR má prednosť pred aktuálnym adresárom."""
+    (tmp_path / "sablona_inzeratu.txt").write_text("###01:x\n", encoding="utf-8")
+    monkeypatch.setenv("BAZOS_DATA_DIR", str(tmp_path / "env"))
+    monkeypatch.chdir(tmp_path)
+    assert b.zisti_data_dir() == str(tmp_path / "env")
+
+
+def test_zisti_data_dir_cwd_s_šablónou(monkeypatch, tmp_path):
+    """Bez env sa použije aktuálny adresár, ak má šablónu."""
+    (tmp_path / "sablona_inzeratu.txt").write_text("###01:x\n", encoding="utf-8")
+    monkeypatch.delenv("BAZOS_DATA_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert b.zisti_data_dir() == str(tmp_path)
+
+
+def test_zisti_data_dir_domov_fallback(monkeypatch, tmp_path):
+    """Fallback: ~/.bazos-automation (portable – bez použitia usera)."""
+    monkeypatch.delenv("BAZOS_DATA_DIR", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "nic").mkdir()
+    monkeypatch.chdir(tmp_path / "nic")
+    assert b.zisti_data_dir() == str(tmp_path / ".bazos-automation")
+
+
+def test_nastav_data_dir(monkeypatch, tmp_path):
+    """--data-dir prepne globály (DATA_DIR, cesty, SABLONA, TELEFON)."""
+    sablona = ("###01:PC, Počítače\n###02:Titulok\n###05:00000\n###07:0900000000\n")
+    (tmp_path / "sablona_inzeratu.txt").write_text(sablona, encoding="utf-8")
+    b.nastav_data_dir(str(tmp_path))
+    assert b.DATA_DIR == str(tmp_path)
+    assert b.CESTA_K_SABLONE == str(tmp_path / "sablona_inzeratu.txt")
+    assert b.PROFIL_EDGE == str(tmp_path / "edge_profile")
+    assert b.SABLONA.get("###02") == "Titulok"
+    assert b.TELEFON == "0900000000"
 
 
 def test_rozhodni_odoslat(monkeypatch):

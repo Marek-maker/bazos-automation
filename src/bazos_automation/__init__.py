@@ -9,7 +9,7 @@ Dáta (sablona_inzeratu.txt, obrazky/, edge_profile/) NIE sú súčasťou balík
 hľadajú sa v poradí: env BAZOS_DATA_DIR -> aktuálny adresár -> ~/.bazos-automation.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from .modul_sablona import MAPPING, nacitaj_sablona
 from .modul_upload import nahraj_fotky

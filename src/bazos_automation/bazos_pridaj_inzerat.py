@@ -76,9 +76,13 @@ logging.basicConfig(
 # edge_profile/ sa hľadajú v poradí: env BAZOS_DATA_DIR -> aktuálny adresár
 # (ak obsahuje šablónu) -> ~/.bazos-automation. Takže inštalovaný balík
 # nájde tvoje reálne dáta a overený edge_profile bez presúvania.
-def zisti_data_dir():
-    """Adresár s dátami (sablona_inzeratu.txt, obrazky/, edge_profile/)."""
-    env = os.environ.get("BAZOS_DATA_DIR")
+def zisti_data_dir(explicit=None):
+    """Adresár s dátami (sablona_inzeratu.txt, obrazky/, edge_profile/).
+
+    Poradie: explicit (--data-dir) -> env BAZOS_DATA_DIR -> aktuálny adresár
+    (ak obsahuje šablónu) -> ~/.bazos-automation (vytvorí sa).
+    """
+    env = explicit or os.environ.get("BAZOS_DATA_DIR")
     if env:
         return env
     if os.path.exists(os.path.join(os.getcwd(), "sablona_inzeratu.txt")):
@@ -178,7 +182,21 @@ def parse_args(argv=None):
     parser.add_argument("--init", action="store_true",
                         help="Vytvorí sablona_inzeratu.txt z vstavanej example šablóny "
                              "do dátového adresára (ak ešte neexistuje)")
+    parser.add_argument("--data-dir", default=None, metavar="CESTA",
+                        help="Adresár s dátami (sablona, obrazky, edge_profile). "
+                             "Má prednosť pred env BAZOS_DATA_DIR a aktuálnym adresárom.")
     return parser.parse_args(argv)
+
+
+def nastav_data_dir(adresar):
+    """Prepne dátový adresár (flag --data-dir) a prečíta šablónu z neho."""
+    global DATA_DIR, ZLOZKA_OBRAZKOV, CESTA_K_SABLONE, PROFIL_EDGE, SABLONA, TELEFON
+    DATA_DIR = zisti_data_dir(adresar)
+    ZLOZKA_OBRAZKOV = os.path.join(DATA_DIR, "obrazky")
+    CESTA_K_SABLONE = os.path.join(DATA_DIR, "sablona_inzeratu.txt")
+    PROFIL_EDGE = os.path.join(DATA_DIR, "edge_profile")
+    SABLONA = nacitaj_sablona(CESTA_K_SABLONE)
+    TELEFON = SABLONA.get("###07")
 
 
 def inicializuj_sablona(data_dir=None):
@@ -188,7 +206,7 @@ def inicializuj_sablona(data_dir=None):
     súbory z gitu, preto sa šablóna generuje týmto príkazom.
     Vráti 0 pri úspechu, 1 ak už existuje alebo sa kopírovanie nepodarilo.
     """
-    data_dir = data_dir or zisti_data_dir()
+    data_dir = data_dir or DATA_DIR
     ciel = os.path.join(data_dir, "sablona_inzeratu.txt")
     if os.path.exists(ciel):
         logging.warning(f"Šablóna už existuje: {ciel} – neprepisujem.")
@@ -697,6 +715,8 @@ def pridaj_inzerat_bazos(sms_limit=None, neodosli=False):
 def main(argv=None):
     """Vstupný bod konzolového príkazu 'bazos'."""
     args = parse_args(argv)
+    if args.data_dir:
+        nastav_data_dir(args.data_dir)
     if args.init:
         return inicializuj_sablona()
     if args.debug:

@@ -131,12 +131,13 @@ a `copy sablona_inzeratu.example.txt sablona_inzeratu.txt` – viď README.
 
 Konfigurácia na novom stroji:
 ```
-copy sablona_inzeratu.example.txt sablona_inzeratu.txt
+bazos --init
 ```
 a vyplniť ###01–###09 (###01 kategória, ###02 nadpis, ###03 popis,
 ###04 cena, ###05 PSČ, ###06 meno, ###07 telefón, ###08 heslo k inzerátu,
-###09 e-mail voliteľný). Prvý beh vytvorí edge_profile/ a vyžiada SMS
-overenie – ďalšie behy už nie.
+###09 e-mail voliteľný). Dátový adresár: `--data-dir CESTA` > env
+`BAZOS_DATA_DIR` > aktuálny adresár (so šablónou) > `~/.bazos-automation`.
+Prvý beh vytvorí edge_profile/ a vyžiada SMS overenie – ďalšie behy už nie.
 
 Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 `--sms-timeout N` (vlastný limit čakania na SMS kód).
