@@ -13,11 +13,13 @@ sa nepoužíva). Distribuované ako Python balík `bazos-automation`.
 - [x] Stádium 2b: Overenie telefónu (SMS kľúč) + navigácia cez menu
 - [x] Stádium 2c: Canonical testy (pytest) + Edge-only
 - [x] Stádium 2d: Python balík (src layout, príkaz `bazos`)
-- [ ] Stádium 3: GitHub – gh auth login + push repozitára
+- [x] Stádium 3: GitHub – repo Marek-maker/bazos-automation pushnuté 31.8.2026
 - [ ] Stádium 4: Extrakcia textov zo šablón inzerátov → automatické
       vyplnenie nadpisu/popisu/ceny
 - [x] Stádium 5: Produkčné odosielanie formulára (odoslat klik) – prvý
       inzerát vložený 31.8.2026
+- [x] Stádium 6: TestPyPI – bazos-automation 0.1.0 nahraté 31.8.2026
+      (https://test.pypi.org/project/bazos-automation/0.1.0/)
 
 ## Štruktúra
 

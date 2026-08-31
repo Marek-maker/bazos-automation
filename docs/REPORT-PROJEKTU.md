@@ -164,12 +164,16 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
    (odosli_inzerat už je scoping do formulára). [HOTOVÉ 31.8.2026 – prvý
    inzerát vložený, overenie POTVRDENÉ v odosli_inzerat]
 3. GITHUB: `gh auth login` + `gh repo create bazos-automation --source=. --push`
-   (gh CLI 2.98 nainštalovaný v C:\Program Files\GitHub CLI, zatiaľ
-   neprihlásený; git email je placeholder marek@example.com). PRED PUSHOM
-   rozhodnúť o filter-branch (bod 5).
-4. EXTRÁKCIA TEXTOV z iných šablón inzerátov: modul_sablona už parsuje
+   [HOTOVÉ 31.8.2026 – repo Marek-maker/bazos-automation (verejné), história
+   očistená filter-branch od reálneho PSČ; git email = noreply
+   59760649+Marek-maker; gh device-flow poll visí na sieti – push cez GH_TOKEN]
+4. TESTPYPI: [HOTOVÉ 31.8.2026 – bazos-automation 0.1.0 (wheel + sdist)
+   na https://test.pypi.org/project/bazos-automation/0.1.0/; inštalácia:
+   pip install --index-url https://test.pypi.org/simple/ --extra-index-url
+   https://pypi.org/simple/ bazos-automation==0.1.0]
+5. EXTRÁKCIA TEXTOV z iných šablón inzerátov: modul_sablona už parsuje
    ###ID:hodnota – stačí rozšíriť MAPPING / vytvoriť viac šablón.
-5. AUTONÓMIA: po overení profilu možno skript spúšťať neinteraktívne
+6. AUTONÓMIA: po overení profilu možno skript spúšťať neinteraktívne
    (vstup je EOF-safe).
 
 ## 9. Preferencie používateľa (Marek)
