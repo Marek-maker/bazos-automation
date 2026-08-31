@@ -89,8 +89,9 @@ Priebeh skriptu:
    S persistentným profilom sa overenie preskočí.
 3. Skript nájde pole pre SMS kód a v termináli sa Ťa spýta:
    `Zadaj kód z SMS:` – kód napíšeš do terminálu a skript ho vyplní a potvrdí.
-4. Potom skript vyplní celý formulár inzerátu a počká na ENTER –
-   inzerát sa NEODOŠLE (konštanta `DEBUG_CEKANIE = True`).
+4. Potom skript vyplní celý formulár inzerátu. Predvolene inzerát ODOŠLE
+   (produkčný režim); s flagom `--neodosli` len počká na ENTER a nič
+   neodošle (test režim).
 
 Fotky sa berú z `obrazky/` (všetky jpg/jpeg/png/webp, zoradené podľa názvu).
 
@@ -149,8 +150,16 @@ dynamicky). Viď komentár v `bazos_pridaj_inzerat.py`.
 
 Aktuálny stav: PRODUKČNÝ (`DEBUG_CEKANIE = False`) – `bazos` odošle inzerát.
 Po odoslaní skript overí potvrdenie Bazoša ("Inzerát bol vložený/zmenený")
-a zaloguje POTVRDENÉ alebo chybu. Pre test režim (vyplniť, NEODOSLAŤ)
-prepnúť `DEBUG_CEKANIE = True` v `src/bazos_automation/bazos_pridaj_inzerat.py`.
+a zaloguje POTVRDENÉ alebo chybu.
+
+Test režim (vyplniť, NEODOSLAŤ) – flag prepína na jeden beh:
+
+```
+bazos --neodosli
+```
+
+Rozhodovacia logika: `rozhodni_odoslat()` – neodošle sa, ak je zapnutý
+`--neodosli` ALEBO `DEBUG_CEKANIE = True` (v kóde).
 
 ## GitHub (neskôr)
 

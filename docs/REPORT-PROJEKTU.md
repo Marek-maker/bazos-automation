@@ -118,6 +118,7 @@ cd C:\Users\ratze\bazos-automation
 .venv\Scripts\python -m pytest                      # testy (canonical)
 .venv\Scripts\bazos --debug                         # skript (test režim)
 bazos --sms-timeout 600
+bazos --neodosli --debug                            # test režim: vyplní, NEODOŠLE
 ```
 
 Konfigurácia na novom stroji:
@@ -194,4 +195,4 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 | Šablóna | ###ID:hodnota, MAPPING v modul_sablona.py |
 | Testy | .venv\Scripts\python -m pytest (40) |
 | Profil | edge_profile/ (user-data-dir) |
-| Odoslanie | PRODUKČNÉ – odosli_inzerat() + overenie "POTVRDENÉ" |
+| Odoslanie | PRODUKČNÉ – odosli_inzerat() + POTVRDENÉ; test režim: --neodosli |

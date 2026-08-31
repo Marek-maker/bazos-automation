@@ -51,7 +51,8 @@ def test_funkcie_existuju():
                  "je_kategoria_prehlad", "ziskaj_prehliadac", "odsuhlas_cookies",
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
                  "vyber_kategoriu", "vypis_elementy_formulara", "vypln_inzerat",
-                 "odosli_inzerat", "skontroluj_sablona", "pridaj_inzerat_bazos"):
+                 "odosli_inzerat", "skontroluj_sablona", "pridaj_inzerat_bazos",
+                 "rozhodni_odoslat"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
 
@@ -267,6 +268,7 @@ def test_parse_args_vychodzie():
     args = b.parse_args([])
     assert args.debug is False
     assert args.sms_timeout is None
+    assert args.neodosli is False
 
 
 def test_parse_args_debug_flag():
@@ -276,6 +278,20 @@ def test_parse_args_debug_flag():
 def test_parse_args_sms_timeout():
     args = b.parse_args(["--sms-timeout", "600"])
     assert args.sms_timeout == 600
+
+
+def test_parse_args_neodosli_flag():
+    assert b.parse_args(["--neodosli"]).neodosli is True
+
+
+def test_rozhodni_odoslat(monkeypatch):
+    """Flag --neodosli aj DEBUG_CEKANIE rozhodujú: ktokoľvek zapnutý = neodoslať."""
+    monkeypatch.setattr(b, "DEBUG_CEKANIE", False)
+    assert b.rozhodni_odoslat(False) is True    # produkcia: odošle
+    assert b.rozhodni_odoslat(True) is False    # --neodosli: neodošle
+    monkeypatch.setattr(b, "DEBUG_CEKANIE", True)
+    assert b.rozhodni_odoslat(False) is False   # DEBUG_CEKANIE=True: neodošle
+    assert b.rozhodni_odoslat(True) is False    # oboje: neodošle
 
 
 def test_debug_mode_vypnuty_standardne():

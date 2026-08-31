@@ -171,7 +171,19 @@ def parse_args(argv=None):
                         help="Predĺžené časové limity (SMS čakanie 300 s) a podrobný DEBUG log")
     parser.add_argument("--sms-timeout", type=int, default=None, metavar="SEK",
                         help="Vlastný limit čakania na SMS kód v sekundách (štandardne 120)")
+    parser.add_argument("--neodosli", action="store_true",
+                        help="Test režim: formulár sa vyplní, inzerát sa NEODOŠLE "
+                             "(prepína produkčný režim na tento beh)")
     return parser.parse_args(argv)
+
+
+def rozhodni_odoslat(neodosli_flag):
+    """True = inzerát sa odošle; False = test režim (iba vyplniť).
+
+    Rozhoduje flag --neodosli a konštanta DEBUG_CEKANIE (ktokoľvek z nich
+    zapnutý = neodosiela sa).
+    """
+    return not (DEBUG_CEKANIE or neodosli_flag)
 
 
 def aktivuj_debug():
@@ -606,7 +618,7 @@ def skontroluj_sablona():
     return True
 
 
-def pridaj_inzerat_bazos(sms_limit=None):
+def pridaj_inzerat_bazos(sms_limit=None, neodosli=False):
     driver = None
     try:
         driver = ziskaj_prehliadac()
@@ -634,10 +646,12 @@ def pridaj_inzerat_bazos(sms_limit=None):
         # 2) Vyplnenie formulára inzerátu (po overení sa objaví)
         vypln_inzerat(driver, WebDriverWait(driver, limit_inzerat))
 
-        if DEBUG_CEKANIE:
-            if vstup("\n[DEBUG] Stlač ENTER pre ukončenie testu...\n") is None:
+        if not rozhodni_odoslat(neodosli):
+            logging.info("TEST režim: formulár vyplnený, inzerát sa NEODOŠLE.")
+            if vstup("\n[TEST] Stlač ENTER pre ukončenie testu...\n") is None:
                 logging.info("Neinteraktívny režim – končím test.")
         else:
+            logging.info("PRODUKČNÝ režim: odosielam inzerát...")
             odosli_inzerat(driver)
 
     except TimeoutException:
@@ -658,7 +672,7 @@ def main(argv=None):
         aktivuj_debug()
     if not skontroluj_sablona():
         return 1
-    pridaj_inzerat_bazos(sms_limit=args.sms_timeout)
+    pridaj_inzerat_bazos(sms_limit=args.sms_timeout, neodosli=args.neodosli)
     return 0
 
 
