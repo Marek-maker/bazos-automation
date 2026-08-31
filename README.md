@@ -43,21 +43,39 @@ bazos-automation/
     └── REPORT-PROJEKTU.md              # handover report
 ```
 
-Dáta (šablóna, fotky, profil) žijú MIMO balíka a hľadajú sa v poradí:
+Dáta (šablóna, fotky, profil) žijú MIMO balíka – kde ich balík hľadá a ako
+ich nastaviť, viď "Konfigurácia (dáta inzerátov)" nižšie.
+
+## Inštalácia (produkčná – čistý stroj)
+
+Požiadavky: Python 3.9+ (Windows: python.org alebo Microsoft Store).
+
+Vytvorenie prostredia a inštalácia balíka:
+
+```
+python -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\python -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bazos-automation
+```
+
+Poznámka: balík je zatiaľ na TestPyPI, preto `--index-url`. Keď bude na
+real PyPI, stačí:
+
+```
+.venv\Scripts\python -m pip install bazos-automation
+```
+
+Inštalácia stiahne aj závislosti (selenium, webdriver-manager) automaticky.
+
+## Konfigurácia (dáta inzerátov)
+
+Dáta (`sablona_inzeratu.txt`, `obrazky/`, `edge_profile/`) žijú MIMO balíka
+a balík ich hľadá v poradí:
 1. env `BAZOS_DATA_DIR` (ak je nastavený),
 2. aktuálny adresár (ak obsahuje `sablona_inzeratu.txt`),
 3. `~/.bazos-automation` (vytvorí sa).
 
-## Inštalácia (Windows)
-
-Vytvorenie prostredia a inštalácia balíka (editable):
-
-```
-python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[dev]"
-```
-
-Konfigurácia (prvý beh):
+Príprava šablóny (prvý beh):
 
 ```
 copy sablona_inzeratu.example.txt sablona_inzeratu.txt
@@ -65,8 +83,21 @@ copy sablona_inzeratu.example.txt sablona_inzeratu.txt
 
 Do `sablona_inzeratu.txt` vyplň ###01–###09 (###01 kategória, ###02 nadpis,
 ###03 popis, ###04 cena, ###05 PSČ, ###06 meno, ###07 telefón, ###08 heslo
-k inzerátu, ###09 e-mail voliteľný). Prvý beh vytvorí `edge_profile/`
-a vyžiada SMS overenie – ďalšie behy už nie.
+k inzerátu, ###09 e-mail voliteľný).
+
+Nastavenie dátového adresára (Windows cmd):
+
+```
+set BAZOS_DATA_DIR=C:\cesta\k\datam
+bazos --neodosli
+```
+
+(PowerShell: `$env:BAZOS_DATA_DIR = "C:\cesta\k\datam"`). Alebo jednoducho
+spúšťaj `bazos` priamo z adresára, kde leží `sablona_inzeratu.txt` – vtedy
+env var netreba.
+
+Prvý beh vytvorí `edge_profile/` a vyžiada SMS overenie telefónu – ďalšie
+behy už nie (overenie sa uchováva v profile).
 
 ## Spustenie
 
@@ -80,6 +111,12 @@ Alebo priamo cez Python (rovnaké správanie):
 
 ```
 .venv\Scripts\python -m bazos_automation.bazos_pridaj_inzerat --debug
+```
+
+Odporúčaný prvý beh v test režime (vyplní, NEODOŠLE):
+
+```
+bazos --neodosli --debug
 ```
 
 Priebeh skriptu:
@@ -99,6 +136,14 @@ Fotky sa berú z `obrazky/` (všetky jpg/jpeg/png/webp, zoradené podľa názvu)
 
 Ak Bazoš neukáže formulár (bot-detekcia a pod.), skript zaloguje aktuálnu
 URL, titulok a nájdené inputy – pošli tento log na analýzu.
+
+## Vývoj (editable inštalácia)
+
+Pre vývoj balíka (zmeny v `src/` sa prejavia okamžite, bez reinstalácie):
+
+```
+.venv\Scripts\python -m pip install -e ".[dev]"
+```
 
 ## Testy (canonical)
 

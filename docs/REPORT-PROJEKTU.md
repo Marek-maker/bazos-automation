@@ -121,6 +121,14 @@ bazos --sms-timeout 600
 bazos --neodosli --debug                            # test režim: vyplní, NEODOŠLE
 ```
 
+PRODUKČNÁ INŠTALÁCIA na čistom stroji (bez editable, z TestPyPI):
+```
+python -m venv .venv
+.venv\Scripts\python -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bazos-automation
+```
+Potom nastaviť BAZOS_DATA_DIR (alebo spúšťať z adresára so šablónou)
+a `copy sablona_inzeratu.example.txt sablona_inzeratu.txt` – viď README.
+
 Konfigurácia na novom stroji:
 ```
 copy sablona_inzeratu.example.txt sablona_inzeratu.txt
