@@ -1,5 +1,5 @@
-"""Pytest konfigurácia: pridá koreň projektu do sys.path."""
+"""Pytest konfigurácia: pridá src/ do sys.path (testy bežia bez inštalácie)."""
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))

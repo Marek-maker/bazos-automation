@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bazos-automation"
+version = "0.1.0"
+description = "Automatizácia pridávania inzerátov na Bazoš.sk (Selenium, Edge)"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "selenium>=4.15",
+    "webdriver-manager>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+bazos = "bazos_automation.bazos_pridaj_inzerat:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bazos_automation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

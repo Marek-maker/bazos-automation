@@ -25,26 +25,34 @@ FUNGUJE (overené reálnymi behmi 30.8.2026):
 - upload VŠETKÝCH fotiek z `obrazky/` jedna za druhou s čakaním na dokončenie
 - odoslanie inzerátu: implementované, ale ZABLOKOVANÉ (`DEBUG_CEKANIE = True`)
 
-TESTY: 40 passed (`pytest`, pytest.ini, testpaths=tests).
-GIT: 14 commitov, pracovný strom čistý.
+TESTY: 40 passed (`pytest`, pyproject.toml, testpaths=tests).
+GIT: 15 commitov, pracovný strom čistý.
 
 ## 3. Architektúra
 
 ```
 bazos-automation/
-├── bazos_pridaj_inzerat.py   # orchestrátor (Verzia 10)
-├── modul_sablona.py          # šablóna ###ID:hodnota -> polia (MAPPING)
-├── modul_upload.py           # Dropzone upload všetkých fotiek jedna za druhou
+├── pyproject.toml            # balík (hatchling src-layout, príkaz `bazos`)
+├── src/bazos_automation/
+│   ├── __init__.py           # verzia + verejné API
+│   ├── bazos_pridaj_inzerat.py  # orchestrátor (Verzia 10, main() = CLI)
+│   ├── modul_sablona.py      # šablóna ###ID:hodnota -> polia (MAPPING)
+│   └── modul_upload.py       # Dropzone upload všetkých fotiek jedna za druhou
 ├── sablona_inzeratu.txt      # REÁLNE dáta (GITIGNORED)
 ├── sablona_inzeratu.example.txt  # dummy dáta (v gite)
 ├── obrazky/                  # fotky (gitignored: *.jpg/png/webp)
 ├── edge_profile/             # persistentný Edge profil (gitignored)
-├── tests/test_bazos.py       # 36 testov
-├── pytest.ini, requirements.txt (selenium, webdriver-manager, pytest)
+├── tests/test_bazos.py       # 40 testov
+├── requirements.txt (selenium, webdriver-manager, pytest)
 └── docs/
     ├── gemini-report-bazos-migracia.md   # pôvodný report (heslo vymazané)
     └── REPORT-PROJEKTU.md                # tento súbor
 ```
+
+DÁTA MIMO BALÍKA: `sablona_inzeratu.txt`, `obrazky/`, `edge_profile/` sa
+hľadajú v poradí: env `BAZOS_DATA_DIR` -> aktuálny adresár (ak obsahuje
+šablónu) -> `~/.bazos-automation` (vytvorí sa). Z koreňa repa sa teda
+použijú lokálne dáta a overený profil – bez presúvania.
 
 Flow: `ziskaj_prehliadac` (Edge + user-data-dir) -> `naviguj_na_pridanie`
 (menu) -> `over_telefon` (SMS, ak treba) -> `vypln_inzerat` (kategória,
@@ -104,9 +112,10 @@ formulár. Každý submit sa kliká výhradne v rámci správneho formulára.
 
 ```
 cd C:\Users\ratze\bazos-automation
-.venv\Scripts\python -m pytest                    # testy (canonical)
-.venv\Scripts\python bazos_pridaj_inzerat.py --debug   # skript (test režim)
-.venv\Scripts\python bazos_pridaj_inzerat.py --sms-timeout 600
+.venv\Scripts\python -m pip install -e ".[dev]"     # inštalácia balíka (raz)
+.venv\Scripts\python -m pytest                      # testy (canonical)
+.venv\Scripts\bazos --debug                         # skript (test režim)
+bazos --sms-timeout 600
 ```
 
 Konfigurácia na novom stroji:
@@ -140,6 +149,8 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 - Dropzone: `#dropzonea input[type='file']` zmizne z DOM po prvej fotke –
   od 2. fotky nahráva fallback `//input[@type='file']` (funguje, robí DEBUG
   šum s 404 stacktrace).
+- `maximize_window()` je best-effort (31.8.2026: read timeout 120 s pri
+  slabom pripojení zabil beh pred navigáciou) – pri chybe varuje a pokračuje.
 
 ## 8. Ďalšie kroky (roadmap)
 

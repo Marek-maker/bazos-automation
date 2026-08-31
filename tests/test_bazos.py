@@ -8,18 +8,18 @@ import subprocess
 import py_compile
 import pytest
 
-import bazos_pridaj_inzerat as b
-import modul_sablona
-import modul_upload
+import bazos_automation.bazos_pridaj_inzerat as b
+from bazos_automation import modul_sablona, modul_upload
 
 PROJ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_PKG = os.path.join(PROJ, "src", "bazos_automation")
 
 
 # ---------- štruktúra modulov ----------
 
 def test_syntax():
     for rel in ("bazos_pridaj_inzerat.py", "modul_sablona.py", "modul_upload.py"):
-        py_compile.compile(os.path.join(PROJ, rel), doraise=True)
+        py_compile.compile(os.path.join(SRC_PKG, rel), doraise=True)
 
 
 def test_konstanty():
@@ -33,14 +33,14 @@ def test_url_constanty():
 
 
 def test_edge_only_bez_chrome():
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "ChromeDriverManager" not in src
     assert "EdgeChromiumDriverManager" in src
 
 
 def test_ziadny_env_v_kode():
     """Skript nesmie používať .env – všetko ide zo šablóny (###ID)."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "dotenv" not in src and "os.getenv" not in src
 
 
@@ -61,28 +61,37 @@ def test_vylucene_polia():
 def test_overenie_klika_v_ramci_formovereni():
     """Submit overenia MUSÍ byť scoping do formovereni – inak sa odošle
     vyhľadávací formulár (oba majú name='Submit'). Regresný test."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert 'find_element(By.NAME, "formovereni")' in src
     assert './/input[@type=\'submit\']' in src or './/input[@type="submit"]' in src
 
 
 def test_persistentny_profil():
     """Overenie telefónu sa uchová medzi behmi cez --user-data-dir."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "PROFIL_EDGE" in src and "user-data-dir" in src
+
+
+def test_maximalizacia_okna_best_effort():
+    """maximize_window nesmie zabiť celý beh – 31.8.2026 visel 120 s
+    (read timeout pri slabom pripojení) a run spadol pred navigáciou.
+    Regresný test: maximalizácia je v try/except s varovaním."""
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "driver.maximize_window()" in src
+    assert "pokračujem bez nej" in src
 
 
 def test_wdm_cache_valid_range_365():
     """webdriver-manager po 1 dni považuje cache za expirovanú a znova sťahuje
     driver (reálny bug 31.8.2026: download spadol na 'Could not reach host').
     valid_range=365 zabezpečí použitie existujúcej cache. Regresný test."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "DriverCacheManager(valid_range=365)" in src
 
 
 def test_fallback_na_lokalnu_cache():
     """Ak install() zlyhá (výpadok siete), použije sa najnovší driver z cache."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "def najdi_cached_driver" in src
     assert "def ziskaj_cestu_drivera" in src
     assert "ziskaj_cestu_drivera()" in src
@@ -109,15 +118,15 @@ def test_najdi_cached_driver_prazdna_cache(tmp_path):
 
 def test_hlavny_skript_pouziva_moduly():
     """Hlavný skript musí používať modul šablóny aj modul uploadu."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
-    assert "from modul_sablona import" in src
-    assert "from modul_upload import" in src
+    src = open(os.path.join(PROJ, "src", "bazos_automation", "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "from .modul_sablona import" in src
+    assert "from .modul_upload import" in src
 
 
 def test_odoslanie_scoping_do_formulara():
     """Odoslanie inzerátu musí byť scoping do formulára s nadpisom –
     name='Submit' majú vyhľadávací aj overovací formulár."""
-    src = open(os.path.join(PROJ, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
     assert "def odosli_inzerat" in src
     assert 'find_element(By.NAME, "nadpis")' in src
     assert "./ancestor::form" in src
@@ -236,7 +245,7 @@ def test_najdi_fotky_chybajuca_zlozka(tmp_path):
 
 def test_upload_ceka_na_dokoncenie():
     """Dropzone nahráva cez XHR – pred odoslaním treba počkať na dz-success."""
-    src = open(os.path.join(PROJ, "modul_upload.py"), encoding="utf-8").read()
+    src = open(os.path.join(SRC_PKG, "modul_upload.py"), encoding="utf-8").read()
     assert "pockaj_na_upload" in src and "dz-success" in src
     assert "dz-uploading" in src and "dz-error" in src
 

@@ -1,9 +1,9 @@
 # Bazoš.sk automatizácia inzerátov
 
-Automatické pridávanie inzerátov na Bazoš.sk pomocou Selenium.
-Migrované z pôvodného pyautogui skriptu (pevné súradnice, Linux-only) na
-Selenium – nezávislé od OS a rozlíšenia obrazovky. Prehliadač: Microsoft
-Edge (Chrome sa nepoužíva).
+Automatické pridávanie inzerátov na Bazoš.sk pomocou Selenium. Migrované z
+pôvodného pyautogui skriptu (pevné súradnice, Linux-only) na Selenium –
+nezávislé od OS a rozlíšenia obrazovky. Prehliadač: Microsoft Edge (Chrome
+sa nepoužíva). Distribuované ako Python balík `bazos-automation`.
 
 ## Štádiá projektu
 
@@ -12,6 +12,7 @@ Edge (Chrome sa nepoužíva).
       reportu do projektových súborov
 - [x] Stádium 2b: Overenie telefónu (SMS kľúč) + navigácia cez menu
 - [x] Stádium 2c: Canonical testy (pytest) + Edge-only
+- [x] Stádium 2d: Python balík (src layout, príkaz `bazos`)
 - [ ] Stádium 3: GitHub – gh auth login + push repozitára
 - [ ] Stádium 4: Extrakcia textov zo šablón inzerátov → automatické
       vyplnenie nadpisu/popisu/ceny
@@ -21,52 +22,61 @@ Edge (Chrome sa nepoužíva).
 
 ```
 bazos-automation/
-├── bazos_pridaj_inzerat.py   # hlavný skript (Selenium, Edge)
+├── pyproject.toml             # balík (hatchling, príkaz `bazos`)
+├── src/bazos_automation/
+│   ├── __init__.py            # verzia + verejné API
+│   ├── bazos_pridaj_inzerat.py  # orchestrátor (CLI, Selenium, Edge)
+│   ├── modul_sablona.py       # šablóna ###ID:hodnota -> polia
+│   └── modul_upload.py        # Dropzone upload fotiek jedna za druhou
 ├── tests/
-│   ├── conftest.py           # sys.path pre importy
-│   └── test_bazos.py         # canonical pytest testy
-├── requirements.txt          # závislosti
-├── .env                      # citlivé údaje (gitignored – NEcommittovať!)
-├── .env.example              # vzor konfigurácie
-├── obrazky/                  # fotky inzerátov (server_foto1.jpg, ...)
+│   ├── conftest.py            # src/ v sys.path
+│   └── test_bazos.py          # canonical pytest testy
+├── sablona_inzeratu.txt       # REÁLNE dáta (GITIGNORED – len lokálne)
+├── sablona_inzeratu.example.txt  # dummy dáta (v gite)
+├── obrazky/                   # fotky (gitignored)
+├── edge_profile/              # persistentný Edge profil (gitignored)
 └── docs/
-    └── gemini-report-bazos-migracia.md  # pôvodný report (bez hesla)
+    ├── gemini-report-bazos-migracia.md  # pôvodný report (bez hesla)
+    └── REPORT-PROJEKTU.md              # handover report
 ```
+
+Dáta (šablóna, fotky, profil) žijú MIMO balíka a hľadajú sa v poradí:
+1. env `BAZOS_DATA_DIR` (ak je nastavený),
+2. aktuálny adresár (ak obsahuje `sablona_inzeratu.txt`),
+3. `~/.bazos-automation` (vytvorí sa).
 
 ## Inštalácia (Windows)
 
-Vytvorenie prostredia:
+Vytvorenie prostredia a inštalácia balíka (editable):
+
 ```
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\python -m pip install -e ".[dev]"
 ```
 
-Inštalácia závislostí:
-```
-pip install -r requirements.txt
-```
-
-Konfigurácia:
-```
-copy .env.example .env
-```
-
-Do `.env` doplň svoje údaje (meno, telefón, heslo, PSČ).
-
-## Testy (canonical)
-
-Canonical príkaz pre overenie projektu:
-```
-.venv\Scripts\python -m pytest
-```
-
-Testy overujú: syntaktickú validitu, konštanty, URL, Edge-only režim
-a dynamickú detekciu poľa pre SMS kód (scenáre na simulovaných stránkach).
-
-## Spustenie (test – bez odoslania)
+Konfigurácia (prvý beh):
 
 ```
-.venv\Scripts\python bazos_pridaj_inzerat.py
+copy sablona_inzeratu.example.txt sablona_inzeratu.txt
+```
+
+Do `sablona_inzeratu.txt` vyplň ###01–###09 (###01 kategória, ###02 nadpis,
+###03 popis, ###04 cena, ###05 PSČ, ###06 meno, ###07 telefón, ###08 heslo
+k inzerátu, ###09 e-mail voliteľný). Prvý beh vytvorí `edge_profile/`
+a vyžiada SMS overenie – ďalšie behy už nie.
+
+## Spustenie
+
+Konzolový príkaz (odkiaľkoľvek v rámci adresára s dátami):
+
+```
+bazos --debug
+```
+
+Alebo priamo cez Python (rovnaké správanie):
+
+```
+.venv\Scripts\python -m bazos_automation.bazos_pridaj_inzerat --debug
 ```
 
 Priebeh skriptu:
@@ -74,24 +84,34 @@ Priebeh skriptu:
 1. Otvorí Edge na kategórii PC (`https://pc.bazos.sk/`) a cez menu
    "Pridať inzerát" prejde na formulár – navigácia ako bežný používateľ.
 2. Bazoš vyžaduje overenie mobilného telefónu – skript zaškrtne podmienky,
-   vyplní `teloverit` číslom z `.env` (BAZOS_TELEFON) a odošle.
-   Na telefón príde SMS kľúč.
+   vyplní `teloverit` číslom z `###07` a odošle. Na telefón príde SMS kľúč.
+   S persistentným profilom sa overenie preskočí.
 3. Skript nájde pole pre SMS kód a v termináli sa Ťa spýta:
    `Zadaj kód z SMS:` – kód napíšeš do terminálu a skript ho vyplní a potvrdí.
 4. Potom skript vyplní celý formulár inzerátu a počká na ENTER –
    inzerát sa NEODOŠLE (konštanta `DEBUG_CEKANIE = True`).
 
-Fotka sa berie z `obrazky/server_foto1.jpg` (ak chýba, krok sa preskočí).
+Fotky sa berú z `obrazky/` (všetky jpg/jpeg/png/webp, zoradené podľa názvu).
 
 Ak Bazoš neukáže formulár (bot-detekcia a pod.), skript zaloguje aktuálnu
 URL, titulok a nájdené inputy – pošli tento log na analýzu.
 
-## Ladenie (predĺžené časy a podrobný log)
+## Testy (canonical)
 
-Ak nepríde SMS kód alebo sa skript zasekáva, spusti s flagom:
+Canonical príkaz pre overenie projektu:
 
 ```
-.venv\Scripts\python bazos_pridaj_inzerat.py --debug
+.venv\Scripts\python -m pytest
+```
+
+Testy overujú: syntaktickú validitu, konštanty, URL, Edge-only režim,
+ochranu citlivých údajov (telefón nesmie byť v gite), dynamickú detekciu
+poľa pre SMS kód a fallback na cached driver.
+
+## Ladenie (predĺžené časy a podrobný log)
+
+```
+bazos --debug
 ```
 
 Čo `--debug` robí:
@@ -103,8 +123,9 @@ Ak nepríde SMS kód alebo sa skript zasekáva, spusti s flagom:
   hlášky Bazoša (napr. limit na SMS, "už overené", chybné číslo)
 
 Vlastný limit čakania na SMS kód (sekundy):
+
 ```
-.venv\Scripts\python bazos_pridaj_inzerat.py --sms-timeout 600
+bazos --sms-timeout 600
 ```
 
 Poznámka: ak Bazoš hlási limit na SMS overenia (po viacerých pokusoch
@@ -119,17 +140,13 @@ do ďalšieho dňa).
 - `https://pc.bazos.sk/` – prehľad kategórie PC
 - `https://www.bazos.sk/` – hlavná stránka
 
-Overenie telefónu je viazané na reláciu prehliadača – pri každom spustení
-príde nový SMS kľúč. Reálne elementy overovacieho formulára:
-`formovereni`, `podminky`, `teloverit`, `Submit` – viď komentár
-v `bazos_pridaj_inzerat.py`. Pole pre SMS kód nemá dopredu známy názov,
-skript ho deteguje dynamicky (prvý nový textový input).
+Reálne elementy overovacieho formulára: `formovereni`, `podminky`,
+`teloverit`, `Submit` (scoping!). Pole pre SMS kód: `klic` (deteguje sa aj
+dynamicky). Viď komentár v `bazos_pridaj_inzerat.py`.
 
 ## Produkčné odoslanie
 
-V `bazos_pridaj_inzerat.py`:
-1. Nastav `DEBUG_CEKANIE = False`.
-2. Odomkni riadok `# driver.find_element(By.NAME, "odeslat").click()`.
+V `src/bazos_automation/bazos_pridaj_inzerat.py` nastav `DEBUG_CEKANIE = False`.
 
 ## GitHub (neskôr)
 
@@ -138,4 +155,5 @@ gh auth login
 gh repo create bazos-automation --public --source=. --push
 ```
 
-Pozor: `.env` je v `.gitignore` – heslo sa do gitu nikdy nedostane.
+Pozor: `sablona_inzeratu.txt` je v `.gitignore` – reálne údaje sa do gitu
+nikdy nedostanú.

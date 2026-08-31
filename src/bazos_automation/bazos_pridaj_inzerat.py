@@ -53,8 +53,8 @@ from webdriver_manager.microsoft import EdgeChromiumDriverManager
 from webdriver_manager.core.driver_cache import DriverCacheManager
 
 # Vlastné moduly
-from modul_sablona import MAPPING, nacitaj_sablona
-from modul_upload import nahraj_fotky
+from .modul_sablona import MAPPING, nacitaj_sablona
+from .modul_upload import nahraj_fotky
 
 # ==========================================
 # 1. KONFIGURÁCIA LOGOVANIA
@@ -71,10 +71,26 @@ logging.basicConfig(
 # Všetky údaje inzerátu žijú v sablona_inzeratu.txt (###ID:hodnota).
 # Tento súbor je GITIGNORED – do gitu ide len sablona_inzeratu.example.txt
 # s dummy dátami. Mapovanie ID -> pole: modul_sablona.MAPPING.
-AKTUALNA_ZLOZKA = os.path.dirname(os.path.abspath(__file__))
-ZLOZKA_OBRAZKOV = os.path.join(AKTUALNA_ZLOZKA, "obrazky")
-CESTA_K_SABLONE = os.path.join(AKTUALNA_ZLOZKA, "sablona_inzeratu.txt")
-PROFIL_EDGE = os.path.join(AKTUALNA_ZLOZKA, "edge_profile")
+# Dáta inzerátu žijú MIMO balíka: sablona_inzeratu.txt, obrazky/,
+# edge_profile/ sa hľadajú v poradí: env BAZOS_DATA_DIR -> aktuálny adresár
+# (ak obsahuje šablónu) -> ~/.bazos-automation. Takže inštalovaný balík
+# nájde tvoje reálne dáta a overený edge_profile bez presúvania.
+def zisti_data_dir():
+    """Adresár s dátami (sablona_inzeratu.txt, obrazky/, edge_profile/)."""
+    env = os.environ.get("BAZOS_DATA_DIR")
+    if env:
+        return env
+    if os.path.exists(os.path.join(os.getcwd(), "sablona_inzeratu.txt")):
+        return os.getcwd()
+    domov = os.path.join(os.path.expanduser("~"), ".bazos-automation")
+    os.makedirs(domov, exist_ok=True)
+    return domov
+
+
+DATA_DIR = zisti_data_dir()
+ZLOZKA_OBRAZKOV = os.path.join(DATA_DIR, "obrazky")
+CESTA_K_SABLONE = os.path.join(DATA_DIR, "sablona_inzeratu.txt")
+PROFIL_EDGE = os.path.join(DATA_DIR, "edge_profile")
 
 SABLONA = nacitaj_sablona(CESTA_K_SABLONE)
 TELEFON = SABLONA.get("###07")  # telefón pre overenie aj kontaktné pole
@@ -581,7 +597,10 @@ def pridaj_inzerat_bazos(sms_limit=None):
     driver = None
     try:
         driver = ziskaj_prehliadac()
-        driver.maximize_window()
+        try:
+            driver.maximize_window()
+        except Exception as e:
+            logging.warning(f"Maximalizácia okna sa nepodarila ({e}) – pokračujem bez nej.")
 
         # Navigácia cez menu (kategória PC -> Pridať inzerát)
         naviguj_na_pridanie(driver)
@@ -619,10 +638,16 @@ def pridaj_inzerat_bazos(sms_limit=None):
             logging.info("Bezpečne ukončujem inštanciu WebDrivera...")
             driver.quit()
 
-if __name__ == "__main__":
-    args = parse_args()
+def main(argv=None):
+    """Vstupný bod konzolového príkazu 'bazos'."""
+    args = parse_args(argv)
     if args.debug:
         aktivuj_debug()
     if not skontroluj_sablona():
-        sys.exit(1)
+        return 1
     pridaj_inzerat_bazos(sms_limit=args.sms_timeout)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
