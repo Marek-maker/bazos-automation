@@ -27,8 +27,8 @@ FUNGUJE (overené reálnymi behmi 30.8.2026):
   inzerát vložený 31.8.2026 (Bazoš potvrdil "Inzerát bol vložený/zmenený",
   aktívny do 10 minút; overenie POTVRDENÉ v logu)
 
-TESTY: 40 passed (`pytest`, pyproject.toml, testpaths=tests).
-GIT: 15 commitov, pracovný strom čistý.
+TESTY: 53 passed (`pytest`, pyproject.toml, testpaths=tests).
+GIT: 25 commitov, pracovný strom čistý, remote = Marek-maker/bazos-automation.
 
 ## 3. Architektúra
 
@@ -163,6 +163,20 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
   šum s 404 stacktrace).
 - `maximize_window()` je best-effort (31.8.2026: read timeout 120 s pri
   slabom pripojení zabil beh pred navigáciou) – pri chybe varuje a pokračuje.
+- TESTPYPI SIMPLE-INDEX LAG (31.8.2026, empiricky): po twine uploadе JSON
+  API aj stránka projektu ukážu novú verziu OKAMŽITE, ale simple index
+  (čo číta pip) sa aktualizuje ONESKORENE – pip nainštaluje staršiu verziu
+  aj s `--upgrade`. FIX: pinovať verziu explicitne (`bazos-automation==0.1.2`)
+  alebo inštalovať z lokálneho wheelu (`pip install --force-reinstall
+  cesta\bazos_automation-0.1.2-py3-none-any.whl`).
+- TIEŇOVANIE PRÍKAZU `bazos` (31.8.2026): na stroji s viacerými Pythonmi
+  sa `bazos` v PowerShell bral z user-site Scripts MS Store Pythonu
+  (stará 0.1.0 na PATH), NIE z .venv – príznak: `--init`/`--data-dir`
+  neznáme aj po upgrade. FIX: vždy `.venv\Scripts\bazos` (alebo aktivácia
+  venv) + overenie verzie `python -c "import bazos_automation; print(...)"`.
+- POWERSHELL `set X=Y` je alias na Set-Variable, NIE env var – env var sa
+  nastavuje `$env:X = "Y"` (cmd: `set X=Y`). Reálny zádrhel 31.8.2026
+  (BAZOS_DATA_DIR sa nenastavil).
 
 ## 8. Ďalšie kroky (roadmap)
 
@@ -206,6 +220,7 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 | PSČ | pole lokalita (autocomplete) |
 | Fotky | Dropzone #dropzonea, čakať na .dz-success |
 | Šablóna | ###ID:hodnota, MAPPING v modul_sablona.py |
-| Testy | .venv\Scripts\python -m pytest (40) |
+| Testy | .venv\Scripts\python -m pytest (53) |
+| Verzia | 0.1.2 (TestPyPI; pinovať ==0.1.2 – lag indexu) |
 | Profil | edge_profile/ (user-data-dir) |
 | Odoslanie | PRODUKČNÉ – odosli_inzerat() + POTVRDENÉ; test režim: --neodosli |

@@ -50,22 +50,41 @@ ich nastaviť, viď "Konfigurácia (dáta inzerátov)" nižšie.
 
 Požiadavky: Python 3.9+ (Windows: python.org alebo Microsoft Store).
 
-Vytvorenie prostredia a inštalácia balíka:
+Vytvorenie prostredia a inštalácia balíka (verzia PINNUTÁ – cache pipu
+a oneskorený index nerozhodujú o tom, čo sa nainštaluje):
 
 ```
 python -m venv .venv
 .venv\Scripts\python -m pip install --upgrade pip
-.venv\Scripts\python -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bazos-automation
+.venv\Scripts\python -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bazos-automation==0.1.2
 ```
 
-Poznámka: balík je zatiaľ na TestPyPI, preto `--index-url`. Keď bude na
-real PyPI, stačí:
+Poznámka o verzii: balík je zatiaľ na TestPyPI, preto `--index-url`.
+TestPyPI simple index sa po nahratí aktualizuje ONESKORENE – ak pip
+"nevidí" najnovšiu verziu (nainštaluje staršiu), počkaj pár minút
+a pinuj verziu explicitne (`==0.1.2`), alebo nainštaluj priamo
+z lokálneho wheelu:
+
+```
+.venv\Scripts\python -m pip install --force-reinstall C:\cesta\k\bazos-automation-0.1.2-py3-none-any.whl
+```
+
+Keď bude balík na real PyPI, stačí:
 
 ```
 .venv\Scripts\python -m pip install bazos-automation
 ```
 
-Inštalácia stiahne aj závislosti (selenium, webdriver-manager) automaticky.
+Overenie nainštalovanej verzie (po každej inštalácii):
+
+```
+.venv\Scripts\python -c "import bazos_automation; print(bazos_automation.__version__)"
+```
+
+POZOR (viac Pythonov v systéme): príkaz `bazos` sa môže brať z user-site
+iného Pythonu, ktorý je na PATH, a nie z tvojho venv (reálny prípad
+31.8.2026). Vždy spúšťaj cez `.venv\Scripts\bazos` alebo po aktivácii
+venv (`.venv\Scripts\Activate.ps1`) a over verziu príkazom vyššie.
 
 ## Konfigurácia (dáta inzerátov)
 
@@ -99,7 +118,8 @@ alebo cez env premennú (cmd):
 set BAZOS_DATA_DIR=C:\cesta\k\datam
 ```
 
-alebo (PowerShell):
+alebo (PowerShell – POZOR: `set X=Y` v PowerShell je alias na Set-Variable,
+env var sa nastavuje cez `$env:`):
 
 ```
 $env:BAZOS_DATA_DIR = "C:\cesta\k\datam"
