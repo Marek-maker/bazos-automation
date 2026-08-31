@@ -181,8 +181,8 @@ def test_example_nema_realne_udaje():
 
 def test_history_nema_telefon():
     """História gitu nesmie obsahovať reálny telefón zo šablóny.
-    (PSČ 00000 ostalo v starom commite 8b30114 na základe rozhodnutia
-    používateľa – história sa neprepisuje.)"""
+    (Reálne PSČ bolo z histórie odstránené filter-branch 31.8.2026 –
+    hodnota je strážená testom test_trackovane_subory_nemaju_psc.)"""
     realna = _realna_sablona()
     telefon = realna.get("###07") if realna else None
     if not telefon:
@@ -206,6 +206,29 @@ def test_trackovane_subory_nemaju_telefon():
         if os.path.isfile(cesta):
             obsah = open(cesta, encoding="utf-8", errors="ignore").read()
             assert telefon not in obsah, f"telefón je v trackovanom súbore: {rel}"
+
+
+def test_psc_nie_je_v_gite():
+    """Reálne PSČ (###05) nesmie byť v trackovaných súboroch ANI v histórii.
+
+    Regresný test: reálne PSČ uniklo do docstringu modul_sablona.py
+    a komentára v testoch (31.8.2026) – telefón bol strážený, PSČ nie.
+    Z histórie odstránené filter-branch 31.8.2026."""
+    realna = _realna_sablona()
+    psc = realna.get("###05") if realna else None
+    if not psc:
+        pytest.skip("reálna šablóna nie je k dispozícii")
+    sledovane = subprocess.run(
+        ["git", "-C", PROJ, "ls-files"], capture_output=True, text=True).stdout.splitlines()
+    for rel in sledovane:
+        cesta = os.path.join(PROJ, rel)
+        if os.path.isfile(cesta):
+            obsah = open(cesta, encoding="utf-8", errors="ignore").read()
+            assert psc not in obsah, f"reálne PSČ je v trackovanom súbore: {rel}"
+    vysledok = subprocess.run(
+        ["git", "-C", PROJ, "log", "--all", "--oneline", "-S", psc],
+        capture_output=True, text=True)
+    assert vysledok.stdout.strip() == "", "reálne PSČ je v histórii!"
 
 
 # ---------- modul_sablona ----------
