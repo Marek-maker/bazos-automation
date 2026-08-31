@@ -98,9 +98,9 @@ TELEFON = SABLONA.get("###07")  # telefón pre overenie aj kontaktné pole
 # Povinné polia šablóny – bez nich skript nemá zmysel spúšťať
 POVINNE_V_SABLONE = ("###01", "###02", "###03", "###04", "###05", "###06", "###07", "###08")
 
-# [DEBUG] True  = formulár sa vyplní a čaká na ENTER (inzerát sa NEODOŠLE).
-#         False = odošle formulár (production režim).
-DEBUG_CEKANIE = True
+# [PRODUKČNÝ REŽIM] False = formulár sa odošle (inzerát vznikne na Bazoši).
+#         True  = formulár sa vyplní a čaká na ENTER (inzerát sa NEODOŠLE).
+DEBUG_CEKANIE = False
 
 # ==========================================
 # 2a. URL (zistené 29.8.2026 – curl + reálny prehliadač)
@@ -568,7 +568,7 @@ def vypln_inzerat(driver, wait):
 
 
 def odosli_inzerat(driver):
-    """Klikne 'Odoslať' v rámci formulára inzerátu.
+    """Klikne 'Odoslať' v rámci formulára inzerátu a overí potvrdenie Bazoša.
 
     name="Submit" majú vyhľadávací, overovací aj inzertný formulár –
     bez scoping by sa odoslal nesprávny. Kotva: element 'nadpis'.
@@ -576,7 +576,20 @@ def odosli_inzerat(driver):
     form = driver.find_element(By.NAME, "nadpis").find_element(By.XPATH, "./ancestor::form")
     tlacidlo = form.find_element(By.XPATH, ".//input[@type='submit'] | .//button[@type='submit']")
     tlacidlo.click()
-    logging.info("Inzerát odoslaný.")
+    logging.info("Inzerát odoslaný – čakám na potvrdenie Bazoša...")
+    time.sleep(4)
+    log_viditelny_text(driver, "po odoslaní inzerátu")
+    try:
+        text = driver.find_element(By.TAG_NAME, "body").text.lower()
+        if any(s in text for s in ("vložený", "ďakujeme", "bol pridaný", "úspešne")):
+            logging.info("POTVRDENÉ: Bazoš potvrdil vloženie inzerátu.")
+        elif any(s in text for s in ("chyba", "chybné", "nepodarilo", "nebol", "limit",
+                                     "blokovan", "neskôr")):
+            logging.error("Bazoš nahlásil chybu pri odoslaní – text stránky vyššie.")
+        else:
+            logging.warning("Neznámy stav po odoslaní – skontroluj text stránky vyššie.")
+    except Exception as e:
+        logging.warning(f"Potvrdenie sa nepodarilo overiť: {e}")
 
 
 # ==========================================

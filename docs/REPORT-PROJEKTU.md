@@ -23,7 +23,9 @@ FUNGUJE (overené reálnymi behmi 30.8.2026):
   lokalita/PSČ s autocomplete, Dropzone fotky, jmeno, telefoni, heslobazar,
   maili voliteľný)
 - upload VŠETKÝCH fotiek z `obrazky/` jedna za druhou s čakaním na dokončenie
-- odoslanie inzerátu: implementované, ale ZABLOKOVANÉ (`DEBUG_CEKANIE = True`)
+- odoslanie inzerátu: PRODUKČNÉ (`DEBUG_CEKANIE = False`) – prvý reálny
+  inzerát vložený 31.8.2026 (Bazoš potvrdil "Inzerát bol vložený/zmenený",
+  aktívny do 10 minút; overenie POTVRDENÉ v logu)
 
 TESTY: 40 passed (`pytest`, pyproject.toml, testpaths=tests).
 GIT: 15 commitov, pracovný strom čistý.
@@ -156,9 +158,10 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 
 1. REÁLNY PRIECHOD: spustiť skript s reálnou šablónou (profil overený ->
    bez SMS), skontrolovať log ("Kategória vybraná", "Upload fotky dokončený",
-   "Chýbajúce polia").
+   "Chýbajúce polia"). [HOTOVÉ 31.8.2026]
 2. PRODUKČNÉ ODOSLANIE: `DEBUG_CEKANIE = False` v bazos_pridaj_inzerat.py
-   (odosli_inzerat už je scoping do formulára).
+   (odosli_inzerat už je scoping do formulára). [HOTOVÉ 31.8.2026 – prvý
+   inzerát vložený, overenie POTVRDENÉ v odosli_inzerat]
 3. GITHUB: `gh auth login` + `gh repo create bazos-automation --source=. --push`
    (gh CLI 2.98 nainštalovaný v C:\Program Files\GitHub CLI, zatiaľ
    neprihlásený; git email je placeholder marek@example.com). PRED PUSHOM
@@ -191,4 +194,4 @@ Flagy: `--debug` (predĺžené limity: SMS 300 s, upload 120 s + DEBUG log),
 | Šablóna | ###ID:hodnota, MAPPING v modul_sablona.py |
 | Testy | .venv\Scripts\python -m pytest (40) |
 | Profil | edge_profile/ (user-data-dir) |
-| Odoslanie | odosli_inzerat() – DEBUG_CEKANIE=False |
+| Odoslanie | PRODUKČNÉ – odosli_inzerat() + overenie "POTVRDENÉ" |

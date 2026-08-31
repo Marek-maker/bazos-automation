@@ -16,7 +16,8 @@ sa nepoužíva). Distribuované ako Python balík `bazos-automation`.
 - [ ] Stádium 3: GitHub – gh auth login + push repozitára
 - [ ] Stádium 4: Extrakcia textov zo šablón inzerátov → automatické
       vyplnenie nadpisu/popisu/ceny
-- [ ] Stádium 5: Produkčné odosielanie formulára (odoslat klik)
+- [x] Stádium 5: Produkčné odosielanie formulára (odoslat klik) – prvý
+      inzerát vložený 31.8.2026
 
 ## Štruktúra
 
@@ -146,7 +147,10 @@ dynamicky). Viď komentár v `bazos_pridaj_inzerat.py`.
 
 ## Produkčné odoslanie
 
-V `src/bazos_automation/bazos_pridaj_inzerat.py` nastav `DEBUG_CEKANIE = False`.
+Aktuálny stav: PRODUKČNÝ (`DEBUG_CEKANIE = False`) – `bazos` odošle inzerát.
+Po odoslaní skript overí potvrdenie Bazoša ("Inzerát bol vložený/zmenený")
+a zaloguje POTVRDENÉ alebo chybu. Pre test režim (vyplniť, NEODOSLAŤ)
+prepnúť `DEBUG_CEKANIE = True` v `src/bazos_automation/bazos_pridaj_inzerat.py`.
 
 ## GitHub (neskôr)
 

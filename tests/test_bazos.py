@@ -24,7 +24,9 @@ def test_syntax():
 
 def test_konstanty():
     assert b.SMS_CEKANIE_SEKUND > 0
-    assert b.DEBUG_CEKANIE is True
+    # PRODUKČNÝ STAV (31.8.2026, rozhodnutie používateľa): formulár sa odošle.
+    # Ak sa vráti test režim, tento assert sa prepne na True.
+    assert b.DEBUG_CEKANIE is False
 
 
 def test_url_constanty():
@@ -130,6 +132,15 @@ def test_odoslanie_scoping_do_formulara():
     assert "def odosli_inzerat" in src
     assert 'find_element(By.NAME, "nadpis")' in src
     assert "./ancestor::form" in src
+
+
+def test_odoslanie_overuje_potvrdenie():
+    """Po odoslaní sa overí, či Bazoš potvrdil vloženie inzerátu
+    (úspešné/chybové markery v texte stránky) – inak by sme nevedeli,
+    či inzerát naozaj vznikol. Regresný test."""
+    src = open(os.path.join(SRC_PKG, "bazos_pridaj_inzerat.py"), encoding="utf-8").read()
+    assert "POTVRDENÉ" in src
+    assert "vložený" in src
 
 
 # ---------- ochrana citlivých údajov ----------
