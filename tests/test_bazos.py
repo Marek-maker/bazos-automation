@@ -52,7 +52,7 @@ def test_funkcie_existuju():
                  "najdi_pole_kodu", "naviguj_na_pridanie", "over_telefon",
                  "vyber_kategoriu", "vypis_elementy_formulara", "vypln_inzerat",
                  "odosli_inzerat", "skontroluj_sablona", "pridaj_inzerat_bazos",
-                 "rozhodni_odoslat"):
+                 "rozhodni_odoslat", "inicializuj_sablona"):
         assert callable(getattr(b, name, None)), f"chýba funkcia: {name}"
 
 
@@ -292,6 +292,7 @@ def test_parse_args_vychodzie():
     assert args.debug is False
     assert args.sms_timeout is None
     assert args.neodosli is False
+    assert args.init is False
 
 
 def test_parse_args_debug_flag():
@@ -305,6 +306,25 @@ def test_parse_args_sms_timeout():
 
 def test_parse_args_neodosli_flag():
     assert b.parse_args(["--neodosli"]).neodosli is True
+
+
+def test_parse_args_init_flag():
+    assert b.parse_args(["--init"]).init is True
+
+
+def test_inicializuj_sablona(tmp_path, monkeypatch):
+    """bazos --init vytvorí šablónu z example do dátového adresára;
+    existujúcu šablónu NEPREPÍŠE (regresný test: čistá inštalácia
+    z PyPI nemá example súbor z gitu, preto je zabalený v balíku)."""
+    monkeypatch.setattr(b, "zisti_data_dir", lambda: str(tmp_path))
+    assert b.inicializuj_sablona() == 0
+    ciel = tmp_path / "sablona_inzeratu.txt"
+    assert ciel.exists()
+    obsah = ciel.read_text(encoding="utf-8")
+    assert "###01:" in obsah and "###07:" in obsah
+    povodne = obsah
+    assert b.inicializuj_sablona() == 1  # už existuje – neprepisuje
+    assert ciel.read_text(encoding="utf-8") == povodne
 
 
 def test_rozhodni_odoslat(monkeypatch):

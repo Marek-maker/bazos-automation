@@ -1,0 +1,9 @@
+###01:PC, Počítače
+###02:Príklad nadpisu inzerátu
+###03:Príklad popisu inzerátu – sem napíš vlastný text.
+###04:100
+###05:00000
+###06:Meno Priklad
+###07:0900000000
+###08:heslo123
+###09:priklad@email.sk

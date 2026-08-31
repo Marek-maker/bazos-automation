@@ -38,6 +38,7 @@ Zdroj: docs/gemini-report-bazos-migracia.md (report od Gemini)
 import os
 import sys
 import time
+import shutil
 import logging
 import argparse
 from selenium import webdriver
@@ -174,7 +175,35 @@ def parse_args(argv=None):
     parser.add_argument("--neodosli", action="store_true",
                         help="Test režim: formulár sa vyplní, inzerát sa NEODOŠLE "
                              "(prepína produkčný režim na tento beh)")
+    parser.add_argument("--init", action="store_true",
+                        help="Vytvorí sablona_inzeratu.txt z vstavanej example šablóny "
+                             "do dátového adresára (ak ešte neexistuje)")
     return parser.parse_args(argv)
+
+
+def inicializuj_sablona(data_dir=None):
+    """Vytvorí sablona_inzeratu.txt z example (súčasť balíka) do dátového adresára.
+
+    Example šablóna je zabalená v balíku – čistá inštalácia z PyPI nemá
+    súbory z gitu, preto sa šablóna generuje týmto príkazom.
+    Vráti 0 pri úspechu, 1 ak už existuje alebo sa kopírovanie nepodarilo.
+    """
+    data_dir = data_dir or zisti_data_dir()
+    ciel = os.path.join(data_dir, "sablona_inzeratu.txt")
+    if os.path.exists(ciel):
+        logging.warning(f"Šablóna už existuje: {ciel} – neprepisujem.")
+        return 1
+    zdroj = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "sablona_inzeratu.example.txt")
+    try:
+        shutil.copyfile(zdroj, ciel)
+    except OSError as e:
+        logging.error(f"Šablónu sa nepodarilo vytvoriť: {e}")
+        return 1
+    logging.info(f"Vytvorená šablóna: {ciel}")
+    logging.info("Vyplň ###01–###09 (kategória, nadpis, popis, cena, PSČ, meno, "
+                 "telefón, heslo, e-mail) a spusti bazos znova.")
+    return 0
 
 
 def rozhodni_odoslat(neodosli_flag):
@@ -668,6 +697,8 @@ def pridaj_inzerat_bazos(sms_limit=None, neodosli=False):
 def main(argv=None):
     """Vstupný bod konzolového príkazu 'bazos'."""
     args = parse_args(argv)
+    if args.init:
+        return inicializuj_sablona()
     if args.debug:
         aktivuj_debug()
     if not skontroluj_sablona():
